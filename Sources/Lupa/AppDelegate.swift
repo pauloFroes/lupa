@@ -23,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var hotKeyIDs: [UInt32] = []
     private var liveHotKeyIDs: [UInt32] = []
-    private var liveScrollMonitor: Any?
+    private let liveInput = LiveZoomInput()
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -190,32 +190,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func registerLiveHotKeys() {
         unregisterLiveHotKeys()
         let control = NSEvent.ModifierFlags.control.rawValue
+        let controlShift = control | NSEvent.ModifierFlags.shift.rawValue
+        // ⌃⇧= também, porque no teclado o "+" é ⇧= e é nele que a mão vai para aproximar.
         let bindings: [(Int, UInt, () -> Void)] = [
             (kVK_ANSI_Equal, control, { [weak self] in self?.live.adjust(by: 1.25) }),
+            (kVK_ANSI_Equal, controlShift, { [weak self] in self?.live.adjust(by: 1.25) }),
             (kVK_ANSI_KeypadPlus, control, { [weak self] in self?.live.adjust(by: 1.25) }),
             (kVK_ANSI_Minus, control, { [weak self] in self?.live.adjust(by: 0.8) }),
             (kVK_ANSI_KeypadMinus, control, { [weak self] in self?.live.adjust(by: 0.8) }),
             (kVK_ANSI_0, control, { [weak self] in self?.live.reset() }),
             (kVK_Escape, 0, { [weak self] in self?.live.stop() }),
         ]
+        // O log (Console, processo Lupa) diz se o atalho registrou e se disparou: é o que separa
+        // "o macOS não entrega a tecla" de "o zoom recebeu e não mudou".
         for (key, modifiers, handler) in bindings {
-            if let id = HotKeyCenter.shared.register(Shortcut(keyCode: UInt32(key), modifiers: modifiers), handler: handler) {
+            let shortcut = Shortcut(keyCode: UInt32(key), modifiers: modifiers)
+            let id = HotKeyCenter.shared.register(shortcut) {
+                NSLog("Lupa zoom ao vivo: atalho %@ disparou", shortcut.displayString)
+                handler()
+            }
+            if let id {
                 liveHotKeyIDs.append(id)
+            } else {
+                NSLog("Lupa zoom ao vivo: atalho %@ (tecla %ld) não registrou", shortcut.displayString, key)
             }
         }
-        // Monitor global de rolagem não pede Acessibilidade; o app embaixo também recebe a rolagem.
-        liveScrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard event.modifierFlags.contains(.control), event.scrollingDeltaY != 0 else { return }
-            let step = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 30 : event.scrollingDeltaY
-            self?.live.adjust(by: pow(1.12, step))
+        liveInput.onZoom = { [weak self] factor in self?.live.adjust(by: factor) }
+        liveInput.start()
+        NSLog("Lupa zoom ao vivo: gestos %@", liveInput.consumesGestures ? "pelo event tap (consome)" : "pelo monitor global (só escuta)")
+        live.setGestureNote(liveInput.consumesGestures ? nil : "permita a Lupa em Acessibilidade para a pinça não chegar ao app")
+        let askedKey = "askedAccessibilityForLiveZoom"
+        if !liveInput.consumesGestures, !UserDefaults.standard.bool(forKey: askedKey) {
+            UserDefaults.standard.set(true, forKey: askedKey)
+            LiveZoomInput.requestAccessibility()
         }
     }
 
     private func unregisterLiveHotKeys() {
         liveHotKeyIDs.forEach { HotKeyCenter.shared.unregister($0) }
         liveHotKeyIDs.removeAll()
-        if let liveScrollMonitor { NSEvent.removeMonitor(liveScrollMonitor) }
-        liveScrollMonitor = nil
+        liveInput.stop()
     }
 
     // MARK: - Modos

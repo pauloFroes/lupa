@@ -13,10 +13,10 @@ A Lupa fica na barra de menus do Mac, sem ícone no Dock, e entra em ação com 
 
 | Atalho | Modo | Como usar |
 | --- | --- | --- |
-| `⌃1` | Zoom | Congela a tela e aproxima em torno do cursor. Role ou use `↑` `↓` para mudar o zoom; mova o mouse para navegar. Clique para desenhar ali mesmo; `esc` sai. |
+| `⌃1` | Zoom | Congela a tela e aproxima em torno do cursor. Role, faça a pinça no trackpad ou use `↑` `↓` (ou `+` `-`) para mudar o zoom; mova o mouse para navegar. Clique para desenhar ali mesmo; `esc` sai. |
 | `⌃2` | Desenhar | Desenha sobre a tela congelada (ou sobre o zoom, se você veio do `⌃1`). |
 | `⌃3` | Intervalo | Cronômetro em tela cheia. `↑` `↓` somam ou tiram 1 minuto, `espaço` pausa, `esc` volta à apresentação. |
-| `⌃4` | Zoom ao vivo | Zoom que acompanha o cursor enquanto você usa os apps; o clique vai para o app embaixo. `⌃=` e `⌃-` (ou `⌃` + rolar) mudam o zoom, entre 1,25× e 8×; `⌃0` volta ao zoom inicial; `esc` ou `⌃4` sai. O selo mostra o nível atual. |
+| `⌃4` | Zoom ao vivo | Zoom que acompanha o cursor enquanto você usa os apps; o clique vai para o app embaixo. a pinça no trackpad, `⌃` + rolar e `⌃+` (ou `⌃=`) e `⌃-` mudam o zoom, entre 1,25× e 8×; `⌃0` volta ao zoom inicial; `esc` ou `⌃4` sai. O selo mostra o nível atual. |
 | `⌃5` | Gravar tela | Abre o painel de gravação; com a gravação rodando, o mesmo atalho para. |
 
 ### No desenho
@@ -24,7 +24,7 @@ A Lupa fica na barra de menus do Mac, sem ícone no Dock, e entra em ação com 
 - **Cores:** `R` vermelho, `G` verde, `B` azul, `O` laranja, `Y` amarelo, `P` rosa. Com `⇧`, a cor vira marca-texto.
 - **Formas, segurando a tecla enquanto arrasta:** `⇧` linha, `⌃` (ou `⌘`) retângulo, `⌥` elipse, `⌃⇧` seta. Pode soltar a tecla antes do mouse: a forma fica. O rótulo da barra mostra a forma da tecla segurada antes de você arrastar.
 - **Texto:** `T` escreve onde está o cursor (acentos funcionam); `esc` termina o texto.
-- **Espessura:** role o mouse (no texto, muda o tamanho da letra).
+- **Espessura:** role o mouse ou faça a pinça (no texto, a rolagem muda o tamanho da letra).
 - **Apagar:** `X` liga a borracha (clique ou arraste sobre um traço, forma ou texto para apagar só ele; `X` de novo ou uma cor volta à caneta). Com `⌥⌘`, um clique apaga um item sem trocar de ferramenta. `E` apaga tudo, e `⌘Z` desfaz, inclusive a borracha.
 - **Quadro:** `W` branco, `K` preto.
 - **Guardar:** `⌘C` copia a imagem; `⌘S` salva um PNG na Mesa.
@@ -62,6 +62,7 @@ Na primeira vez, o macOS pede três permissões em Ajustes do Sistema › Privac
 
 - **Gravação de Tela e Áudio do Sistema**, obrigatória: o zoom e o desenho trabalham sobre uma foto da tela tirada na hora do atalho, e a gravação filma a tela. Nada sai do seu Mac.
 - **Microfone** e **Câmera**, só se você ligar essas opções no painel de gravação.
+- **Acessibilidade**, opcional, pedida no primeiro zoom ao vivo: com ela, a pinça e o `⌃` + rolar do zoom ao vivo ficam só com a Lupa; sem ela, o zoom ainda responde, mas o app embaixo também recebe o gesto.
 
 Depois de permitir a Gravação de Tela, abra a Lupa de novo.
 

@@ -66,7 +66,13 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     func adjust(by factor: CGFloat) {
         guard isActive else { return }
         targetZoom = (targetZoom * factor).clamped(Self.zoomRange.lowerBound, Self.zoomRange.upperBound)
+        NSLog("Lupa zoom ao vivo: fator %.3f, zoom %.2f", factor, targetZoom)
         hud?.show(zoom: targetZoom)
+    }
+
+    func setGestureNote(_ note: String?) {
+        hud?.note = note
+        hud?.needsDisplay = true
     }
 
     func reset() {
@@ -159,6 +165,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
 private final class LiveHUDView: NSView {
     private var zoom: CGFloat = 2
     private var hintsUntil = Date.distantPast
+    var note: String?
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -178,8 +185,9 @@ private final class LiveHUDView: NSView {
         HUD.drawBar(
             [
                 .badge(level),
-                HUD.hint("⌃=  ⌃-", "zoom"),
+                HUD.hint("pinça", "zoom"),
                 HUD.hint("⌃ rolar", "zoom"),
+                HUD.hint("⌃+  ⌃-", "zoom"),
                 HUD.hint("⌃0", "volta ao inicial"),
                 HUD.hint("esc", "sai"),
             ],
@@ -189,5 +197,15 @@ private final class LiveHUDView: NSView {
             maxWidth: bounds.width - 32,
             alpha: HUD.fadeAlpha(until: hintsUntil)
         )
+        if let note {
+            HUD.drawBar(
+                [.hint([(note, false)])],
+                style: .secondary,
+                centerX: bounds.midX,
+                bottom: 104,
+                maxWidth: bounds.width - 32,
+                alpha: HUD.fadeAlpha(until: hintsUntil)
+            )
+        }
     }
 }

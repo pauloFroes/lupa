@@ -255,7 +255,7 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         let label = String(format: "%.1f×", targetZoom).replacingOccurrences(of: ".", with: ",")
         return [
             .badge(label),
-            .hint([("rolar", true), (" ou ", false), ("↑↓", true), (" aproxima", false)]),
+            .hint([("rolar", true), (", ", false), ("pinça", true), (" ou ", false), ("↑↓", true), (" aproxima", false)]),
             .hint([("clique", true), (" desenha", false)]),
             HUD.hint("esc", "sai"),
         ]
@@ -318,7 +318,7 @@ final class ZoomDrawView: NSView, NSTextInputClient {
                 HUD.hint("T", "escreve no cursor"),
                 HUD.hint("R G B O Y P", "cor"),
                 HUD.hint("⇧+cor", "marca-texto"),
-                HUD.hint("rolar", "espessura"),
+                HUD.hint("rolar ou pinça", "espessura"),
             ],
             board,
         ]
@@ -468,6 +468,19 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         needsDisplay = true
     }
 
+    // A pinça do trackpad aproxima no zoom; no desenho ela muda a espessura, como a rolagem.
+    override func magnify(with event: NSEvent) {
+        switch mode {
+        case .zoom:
+            targetZoom = (targetZoom * (1 + event.magnification)).clamped(1, 16)
+        case .draw:
+            guard draft == nil else { return }
+            penWidth = (penWidth * (1 + event.magnification)).clamped(1, 60)
+        }
+        showHUD(full: false)
+        needsDisplay = true
+    }
+
     // MARK: - Teclado
 
     override func keyDown(with event: NSEvent) {
@@ -509,8 +522,8 @@ final class ZoomDrawView: NSView, NSTextInputClient {
 
     private func handleZoomKey(_ event: NSEvent) {
         switch Int(event.keyCode) {
-        case kVK_UpArrow: targetZoom = (targetZoom * 1.25).clamped(1, 16)
-        case kVK_DownArrow: targetZoom = (targetZoom / 1.25).clamped(1, 16)
+        case kVK_UpArrow, kVK_ANSI_Equal, kVK_ANSI_KeypadPlus: targetZoom = (targetZoom * 1.25).clamped(1, 16)
+        case kVK_DownArrow, kVK_ANSI_Minus, kVK_ANSI_KeypadMinus: targetZoom = (targetZoom / 1.25).clamped(1, 16)
         default: return
         }
         showHUD(full: false)

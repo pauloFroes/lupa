@@ -41,23 +41,62 @@ cp build/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 codesign --force --sign "${LUPA_SIGN_IDENTITY:--}" --identifier io.github.paulofroes.lupa "$app"
 echo "pronto: $app"
 
+app_running() { pgrep -x Lupa >/dev/null; }
+
+# Espera em décimos de segundo; devolve sucesso quando nenhuma Lupa está rodando.
+wait_gone() {
+  for _ in $(seq 1 "$1"); do
+    app_running || return 0
+    sleep 0.1
+  done
+  ! app_running
+}
+
+fail() { echo "erro: $*" >&2; exit 1; }
+
 if $install; then
-  # Abrir enquanto a instância antiga ainda está saindo dá o erro -600 do Launch Services.
-  if pkill -x Lupa 2>/dev/null; then
-    for _ in $(seq 1 50); do
-      pgrep -x Lupa >/dev/null || break
-      sleep 0.1
-    done
+  dest=/Applications/Lupa.app
+  # Fechar antes de trocar: apagar o bundle de um processo vivo deixa a versão velha rodando,
+  # e abrir enquanto ela ainda sai dá o erro -600 do Launch Services.
+  if app_running; then
+    pkill -TERM -x Lupa || true
+    if ! wait_gone 50; then
+      echo "a Lupa não fechou em 5 s; forçando"
+      pkill -KILL -x Lupa || true
+      wait_gone 30 || fail "não consegui fechar a Lupa; saia pelo menu dela e rode de novo"
+    fi
+    echo "fechada: a Lupa que estava aberta"
   fi
-  rm -rf /Applications/Lupa.app
-  cp -R "$app" /Applications/Lupa.app
-  echo "instalado: /Applications/Lupa.app"
-  app=/Applications/Lupa.app
+  rm -rf "$dest"
+  [ ! -e "$dest" ] || fail "não consegui apagar $dest"
+  ditto "$app" "$dest"
+  cmp -s "$app/Contents/MacOS/Lupa" "$dest/Contents/MacOS/Lupa" || fail "a cópia em $dest não confere com o build"
+  codesign --verify --strict "$dest" || fail "a assinatura de $dest não confere"
+  # O Launch Services guarda em cache o bundle antigo; registrar de novo faz o open achar o novo.
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$dest" >/dev/null 2>&1 || true
+  version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$dest/Contents/Info.plist")"
+  echo "instalado: $dest (versão $version, commit $(git rev-parse --short HEAD))"
+  app="$dest"
 fi
 
 if $open_after; then
+  app_path="$(cd "$app" && pwd)"
+  opened=false
   for attempt in 1 2 3; do
-    open "$app" && break
+    if open "$app_path"; then
+      opened=true
+      break
+    fi
     [ "$attempt" -lt 3 ] && sleep 1
   done
+  $opened || fail "não consegui abrir $app_path"
+  pid=""
+  for _ in $(seq 1 50); do
+    pid="$(pgrep -x Lupa | head -1)" && break
+    sleep 0.1
+  done
+  [ -n "$pid" ] || fail "a Lupa não ficou aberta"
+  running="$(ps -p "$pid" -o comm=)"
+  [ "$running" = "$app_path/Contents/MacOS/Lupa" ] || fail "a Lupa aberta é outra cópia: $running"
+  echo "aberta: $app_path (pid $pid)"
 fi

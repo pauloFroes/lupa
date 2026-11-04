@@ -53,7 +53,7 @@ cd lupa
 scripts/build-app.sh --install --open
 ```
 
-O script compila em modo release, monta `build/Lupa.app` com ícone e fontes, assina e, com `--install`, copia para `/Applications`. Para abrir junto com o Mac, ligue **Abrir ao iniciar sessão** no menu.
+O script compila em modo release, monta `build/Lupa.app` com ícone e fontes e assina. Com `--install`, fecha a Lupa que estiver aberta (à força, se ela não sair em 5 s), apaga a de `/Applications`, copia a nova e confere o binário; com `--open`, abre e confere que está rodando a cópia nova. Para atualizar, rode o mesmo comando depois de `git pull`. Para abrir junto com o Mac, ligue **Abrir ao iniciar sessão** no menu.
 
 ## Permissões
 

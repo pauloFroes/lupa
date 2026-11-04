@@ -16,7 +16,7 @@ A Lupa fica na barra de menus do Mac, sem ícone no Dock, e entra em ação com 
 | `⌃1` | Zoom | Congela a tela e aproxima em torno do cursor. Role, faça a pinça no trackpad ou use `↑` `↓` (ou `+` `-`) para mudar o zoom; mova o mouse para navegar. Clique para desenhar ali mesmo; `esc` sai. |
 | `⌃2` | Desenhar | Desenha sobre a tela congelada (ou sobre o zoom, se você veio do `⌃1`). |
 | `⌃3` | Intervalo | Cronômetro em tela cheia. `↑` `↓` somam ou tiram 1 minuto, `espaço` pausa, `esc` volta à apresentação. |
-| `⌃4` | Zoom ao vivo | Zoom que acompanha o cursor enquanto você usa os apps; o clique vai para o app embaixo. a pinça no trackpad, `⌃` + rolar e `⌃+` (ou `⌃=`) e `⌃-` mudam o zoom, entre 1,25× e 8×; `⌃0` volta ao zoom inicial; `esc` ou `⌃4` sai. O selo mostra o nível atual. |
+| `⌃4` | Zoom ao vivo | Zoom que acompanha o cursor enquanto você usa os apps; o clique vai para o app embaixo. a pinça no trackpad, `⌃` + rolar e `⌃+` (ou `⌃=`) e `⌃-` mudam o zoom, entre 1,25× e 8×; `⌃0` volta ao zoom inicial; `esc` ou `⌃4` sai. O selo mostra o nível atual. O zoom e o deslocamento andam por física de mola, sincronizados com a tela (até 120 Hz), e a entrada e a saída são animadas. |
 | `⌃5` | Gravar tela | Abre o painel de gravação; com a gravação rodando, o mesmo atalho para. |
 
 ### No desenho

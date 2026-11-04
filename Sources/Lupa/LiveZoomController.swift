@@ -3,7 +3,9 @@ import CoreMedia
 import ScreenCaptureKit
 
 // Zoom ao vivo: um SCStream da tela (sem as janelas da Lupa) desenhado numa janela que não
-// recebe clique. Como a escala é em torno do cursor, o clique cai no ponto real sob o mouse.
+// recebe clique. A escala é em torno de um ponto que segue o cursor por uma mola: em movimento
+// ele fica um instante atrás (a fluidez do Screen Studio) e, parado, coincide com o cursor,
+// então o clique cai no ponto real sob o mouse.
 final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private(set) var isActive = false
     var onStop: (() -> Void)?
@@ -11,8 +13,13 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private var window: OverlayWindow?
     private var stream: SCStream?
     private var screen: NSScreen?
-    private var ticker: Timer?
-    private var zoom: CGFloat = 1
+    private var displayLink: CADisplayLink?
+    private var lastTimestamp: CFTimeInterval?
+    private var closing = false
+    // O zoom anda em escala logarítmica: 2× → 4× leva o mesmo tempo que 4× → 8×, como o olho espera.
+    private var logZoom = Spring(value: 0, response: 0.42)
+    private var focusX = Spring(value: 0, response: 0.26)
+    private var focusY = Spring(value: 0, response: 0.26)
     private var targetZoom: CGFloat = 2
     private var initialZoom: CGFloat = 2
     private var hud: LiveHUDView?
@@ -32,7 +39,8 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         do {
             let filter = try await ScreenCapture.filter(for: screen, requireExclusion: true)
             let configuration = ScreenCapture.configuration(for: screen)
-            configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
+            let fps = Int32(max(60, screen.maximumFramesPerSecond))
+            configuration.minimumFrameInterval = CMTime(value: 1, timescale: fps)
             configuration.queueDepth = 5
             let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
@@ -46,11 +54,20 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
-    func stop() {
+    // Animado, o zoom volta a 1× pela mola antes de fechar, como a câmera saindo do zoom.
+    func stop(animated: Bool = false) {
         guard isActive else { return }
+        if animated, displayLink != nil {
+            guard !closing else { return }
+            closing = true
+            logZoom.target = 0
+            return
+        }
         isActive = false
-        ticker?.invalidate()
-        ticker = nil
+        closing = false
+        displayLink?.invalidate()
+        displayLink = nil
+        lastTimestamp = nil
         if let stream {
             Task { try? await stream.stopCapture() }
         }
@@ -64,8 +81,9 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func adjust(by factor: CGFloat) {
-        guard isActive else { return }
+        guard isActive, !closing else { return }
         targetZoom = (targetZoom * factor).clamped(Self.zoomRange.lowerBound, Self.zoomRange.upperBound)
+        logZoom.target = log(Double(targetZoom))
         NSLog("Lupa zoom ao vivo: fator %.3f, zoom %.2f", factor, targetZoom)
         hud?.show(zoom: targetZoom)
     }
@@ -76,8 +94,9 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func reset() {
-        guard isActive else { return }
+        guard isActive, !closing else { return }
         targetZoom = initialZoom
+        logZoom.target = log(Double(targetZoom))
         hud?.show(zoom: targetZoom)
     }
 
@@ -89,6 +108,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         contentLayer.position = CGPoint(x: size.width / 2, y: size.height / 2)
         contentLayer.contentsGravity = .resize
         contentLayer.magnificationFilter = .linear
+        contentLayer.minificationFilter = .linear
         view.layer?.addSublayer(contentLayer)
 
         let border = CALayer()
@@ -106,32 +126,65 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         self.window = window
         self.stream = stream
         self.screen = screen
-        zoom = 1
         self.initialZoom = initialZoom.clamped(Self.zoomRange.lowerBound, Self.zoomRange.upperBound)
         targetZoom = self.initialZoom
+        closing = false
         isActive = true
         hud.show(zoom: targetZoom)
 
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.updateTransform() }
-        RunLoop.main.add(timer, forMode: .common)
-        ticker = timer
+        let cursor = cursorPoint(in: screen.frame)
+        focusX.snap(to: Double(cursor.x))
+        focusY.snap(to: Double(cursor.y))
+        logZoom.snap(to: 0)
+        logZoom.target = log(Double(targetZoom))
+        applyTransform(in: screen.frame)
+
+        // O display link acompanha a tela (120 Hz no ProMotion); o Timer de 60 Hz batia fora do
+        // vsync e dava os trancos.
+        let link = view.displayLink(target: self, selector: #selector(step(_:)))
+        let maxFPS = Float(max(60, screen.maximumFramesPerSecond))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: maxFPS, preferred: maxFPS)
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+        lastTimestamp = nil
     }
 
-    private func updateTransform() {
-        guard let screen else { return }
-        hud?.tick()
-        zoom += (targetZoom - zoom) * 0.2
-        if abs(targetZoom - zoom) < 0.002 { zoom = targetZoom }
-        let frame = screen.frame
+    private func cursorPoint(in frame: CGRect) -> CGPoint {
         let mouse = NSEvent.mouseLocation
-        let point = CGPoint(
+        return CGPoint(
             x: (mouse.x - frame.minX).clamped(0, frame.width),
             y: (mouse.y - frame.minY).clamped(0, frame.height)
         )
+    }
+
+    @objc private func step(_ link: CADisplayLink) {
+        guard let screen else { return }
+        let now = link.targetTimestamp
+        let dt = lastTimestamp.map { now - $0 } ?? (1.0 / 60)
+        lastTimestamp = now
+        hud?.tick()
+
+        let cursor = cursorPoint(in: screen.frame)
+        focusX.target = Double(cursor.x)
+        focusY.target = Double(cursor.y)
+        focusX.step(dt)
+        focusY.step(dt)
+        logZoom.step(dt)
+        applyTransform(in: screen.frame)
+
+        if closing, logZoom.value < 0.01 { stop() }
+    }
+
+    private func applyTransform(in frame: CGRect) {
+        let zoom = CGFloat(exp(logZoom.value))
+        let focus = CGPoint(
+            x: CGFloat(focusX.value).clamped(0, frame.width),
+            y: CGFloat(focusY.value).clamped(0, frame.height)
+        )
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        contentLayer.anchorPoint = CGPoint(x: point.x / frame.width, y: point.y / frame.height)
-        contentLayer.position = point
+        contentLayer.anchorPoint = CGPoint(x: focus.x / frame.width, y: focus.y / frame.height)
+        contentLayer.position = focus
         contentLayer.transform = CATransform3DMakeScale(zoom, zoom, 1)
         CATransaction.commit()
     }

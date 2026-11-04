@@ -199,7 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             (kVK_ANSI_Minus, control, { [weak self] in self?.live.adjust(by: 0.8) }),
             (kVK_ANSI_KeypadMinus, control, { [weak self] in self?.live.adjust(by: 0.8) }),
             (kVK_ANSI_0, control, { [weak self] in self?.live.reset() }),
-            (kVK_Escape, 0, { [weak self] in self?.live.stop() }),
+            (kVK_Escape, 0, { [weak self] in self?.live.stop(animated: true) }),
         ]
         // O log (Console, processo Lupa) diz se o atalho registrou e se disparou: é o que separa
         // "o macOS não entrega a tecla" de "o zoom recebeu e não mudou".
@@ -247,7 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .breakTimer:
             if breakView != nil { closeBreak() } else { startBreak() }
         case .liveZoom:
-            if live.isActive { live.stop() } else { startLive() }
+            if live.isActive { live.stop(animated: true) } else { startLive() }
         case .record:
             recording.toggle()
         }

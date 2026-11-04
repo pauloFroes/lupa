@@ -42,7 +42,13 @@ codesign --force --sign "${LUPA_SIGN_IDENTITY:--}" --identifier io.github.paulof
 echo "pronto: $app"
 
 if $install; then
-  pkill -x Lupa 2>/dev/null || true
+  # Abrir enquanto a instância antiga ainda está saindo dá o erro -600 do Launch Services.
+  if pkill -x Lupa 2>/dev/null; then
+    for _ in $(seq 1 50); do
+      pgrep -x Lupa >/dev/null || break
+      sleep 0.1
+    done
+  fi
   rm -rf /Applications/Lupa.app
   cp -R "$app" /Applications/Lupa.app
   echo "instalado: /Applications/Lupa.app"
@@ -50,5 +56,8 @@ if $install; then
 fi
 
 if $open_after; then
-  open "$app"
+  for attempt in 1 2 3; do
+    open "$app" && break
+    [ "$attempt" -lt 3 ] && sleep 1
+  done
 fi

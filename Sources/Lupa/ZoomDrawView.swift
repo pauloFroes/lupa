@@ -35,6 +35,11 @@ final class ZoomDrawView: NSView, NSTextInputClient {
     // Cada mudança guarda o estado anterior, então ⌘Z desfaz também a borracha e o "apaga tudo".
     private var history: [[Shape]] = []
     private var eraser = false
+    // Ferramenta escolhida pelas teclas 1 a 5; vale até trocar. Segurar ⇧ ⌃ ⌥ ainda manda.
+    private var tool: Shape.Kind = .freehand
+    private static let toolKeys: [String: Shape.Kind] = [
+        "1": .freehand, "2": .line, "3": .rectangle, "4": .ellipse, "5": .arrow,
+    ]
     private var erasingStroke = false
     private var erasedThisStroke = false
     private var lastErasePoint: CGPoint = .zero
@@ -278,7 +283,7 @@ final class ZoomDrawView: NSView, NSTextInputClient {
     private func toolName() -> String {
         if draft != nil { return "texto" }
         if showsEraser { return "borracha" }
-        switch current?.kind ?? Shape.kind(for: heldFlags) {
+        switch current?.kind ?? kind(for: heldFlags) {
         case .line: return "linha"
         case .rectangle: return "retângulo"
         case .ellipse: return "elipse"
@@ -306,12 +311,12 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         return [
             [
                 .group("formas"),
-                .hint([("segure a tecla e arraste:", false)]),
-                HUD.hint("⇧", "linha"),
-                HUD.hint("⌃", "retângulo"),
-                HUD.hint("⌥", "elipse"),
-                HUD.hint("⌃⇧", "seta"),
-                .hint([("sem tecla, traço livre", false)]),
+                HUD.hint("1", "caneta"),
+                HUD.hint("2", "linha"),
+                HUD.hint("3", "retângulo"),
+                HUD.hint("4", "elipse"),
+                HUD.hint("5", "seta"),
+                .hint([("ou segure ⇧ ⌃ ⌥ ⌃⇧ ao arrastar", false)]),
             ],
             [
                 .group("texto e cor"),
@@ -353,7 +358,7 @@ final class ZoomDrawView: NSView, NSTextInputClient {
             return
         }
         current = Shape(
-            kind: Shape.kind(for: event.modifierFlags),
+            kind: kind(for: heldFlags),
             points: [location],
             color: Pens.all[penIndex].color,
             width: effectiveWidth,
@@ -390,6 +395,19 @@ final class ZoomDrawView: NSView, NSTextInputClient {
             shapes.removeAll { $0.hit(sample, radius: Self.eraserRadius) }
         }
         lastErasePoint = target
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        if current != nil || erasingStroke { mouseDragged(with: event) }
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        if current != nil || erasingStroke { mouseUp(with: event) }
+    }
+
+    private func kind(for flags: NSEvent.ModifierFlags) -> Shape.Kind {
+        let held = Shape.kind(for: flags)
+        return held == .freehand ? tool : held
     }
 
     private func checkpoint() {
@@ -440,7 +458,12 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         needsDisplay = true
     }
 
+    // O macOS pode entregar ⌃+clique como clique direito. No desenho ele é o retângulo, não a saída.
     override func rightMouseDown(with event: NSEvent) {
+        if mode == .draw, event.modifierFlags.contains(.control) {
+            mouseDown(with: event)
+            return
+        }
         if mode == .draw, enteredFromZoom {
             returnToZoom()
         } else {
@@ -545,6 +568,10 @@ final class ZoomDrawView: NSView, NSTextInputClient {
             }
         case "x":
             eraser.toggle()
+            showHUD(full: false)
+        case "1", "2", "3", "4", "5":
+            tool = Self.toolKeys[key] ?? .freehand
+            eraser = false
             showHUD(full: false)
         case "w": board = board == .white ? .screen : .white
         case "k": board = board == .black ? .screen : .black

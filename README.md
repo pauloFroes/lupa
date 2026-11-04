@@ -22,7 +22,7 @@ A Lupa fica na barra de menus do Mac, sem ícone no Dock, e entra em ação com 
 ### No desenho
 
 - **Cores:** `R` vermelho, `G` verde, `B` azul, `O` laranja, `Y` amarelo, `P` rosa. Com `⇧`, a cor vira marca-texto.
-- **Formas, segurando a tecla enquanto arrasta:** `⇧` linha, `⌃` (ou `⌘`) retângulo, `⌥` elipse, `⌃⇧` seta. Pode soltar a tecla antes do mouse: a forma fica. O rótulo da barra mostra a forma da tecla segurada antes de você arrastar.
+- **Formas:** `1` caneta, `2` linha, `3` retângulo, `4` elipse, `5` seta; a forma escolhida vale até você trocar. Também dá para segurar a tecla enquanto arrasta: `⇧` linha, `⌃` (ou `⌘`) retângulo, `⌥` elipse, `⌃⇧` seta. Pode soltar a tecla antes do mouse: a forma fica. O rótulo da barra mostra a forma da tecla segurada antes de você arrastar.
 - **Texto:** `T` escreve onde está o cursor (acentos funcionam); `esc` termina o texto.
 - **Espessura:** role o mouse ou faça a pinça (no texto, a rolagem muda o tamanho da letra).
 - **Apagar:** `X` liga a borracha (clique ou arraste sobre um traço, forma ou texto para apagar só ele; `X` de novo ou uma cor volta à caneta). Com `⌥⌘`, um clique apaga um item sem trocar de ferramenta. `E` apaga tudo, e `⌘Z` desfaz, inclusive a borracha.

@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Xcode / Swift
+build/
+DerivedData/
+.build/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+
+# Node
+node_modules/
+dist/
+
+# Segredos locais
+.env
+.env.*

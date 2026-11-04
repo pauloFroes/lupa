@@ -1,6 +1,13 @@
 # Lupa
 
-Zoom, desenho na tela, cronômetro de intervalo e gravação de tela para quem apresenta no Mac. Fica na barra de menus, sem ícone no Dock, e responde a atalhos globais. A ideia vem do ZoomIt, da Sysinternals, refeita para o macOS.
+**O software que o Paulo Fróes usa para gravar a tela, dar zoom e fazer marcações nas aulas e apresentações.**
+
+A Lupa fica na barra de menus do Mac, sem ícone no Dock, e entra em ação com um atalho: aproxima qualquer ponto da tela, deixa você desenhar e escrever por cima, segura a sala com um cronômetro de intervalo e grava tudo em alta qualidade, com voz, som do sistema e câmera. A ideia vem do ZoomIt, da Sysinternals, refeita para o macOS.
+
+- **Zoom** em torno do cursor, congelado ou ao vivo, que acompanha o mouse enquanto você usa os apps.
+- **Marcações** com caneta, marca-texto, setas, formas, texto e quadro branco ou preto.
+- **Gravação** na resolução Retina, até 60 fps, em HEVC, H.264 ou ProRes, com microfone e som do sistema em faixas separadas.
+- **Intervalo** com cronômetro em tela cheia para pausar a aula sem perder a turma.
 
 ## O que ela faz
 

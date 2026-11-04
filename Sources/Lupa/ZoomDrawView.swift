@@ -30,6 +30,20 @@ final class ZoomDrawView: NSView, NSTextInputClient {
     private var shapes: [Shape] = []
     private var current: Shape?
     private var dragStart: CGPoint = .zero
+    private var heldFlags: NSEvent.ModifierFlags = []
+    private var helpVisible = false
+    // Cada mudança guarda o estado anterior, então ⌘Z desfaz também a borracha e o "apaga tudo".
+    private var history: [[Shape]] = []
+    private var eraser = false
+    // Ferramenta escolhida pelas teclas 1 a 5; vale até trocar. Segurar ⇧ ⌃ ⌥ ainda manda.
+    private var tool: Shape.Kind = .freehand
+    private static let toolKeys: [String: Shape.Kind] = [
+        "1": .freehand, "2": .line, "3": .rectangle, "4": .ellipse, "5": .arrow,
+    ]
+    private var erasingStroke = false
+    private var erasedThisStroke = false
+    private var lastErasePoint: CGPoint = .zero
+    private static let eraserRadius: CGFloat = 12
     private var penIndex: Int
     private var highlighter = false
     private var penWidth: CGFloat = 6
@@ -39,7 +53,6 @@ final class ZoomDrawView: NSView, NSTextInputClient {
 
     private var exporting = false
     private var hudUntil = Date.distantPast
-    private var hudFull = true
     private var toast: String?
     private var toastUntil = Date.distantPast
     private var ticker: Timer?
@@ -54,7 +67,10 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         self.mouse = mouse
         self.penIndex = penIndex
         super.init(frame: frame)
-        if mode == .draw { frozenSource = bounds }
+        if mode == .draw {
+            frozenSource = bounds
+            helpVisible = true
+        }
         showHUD(full: true)
     }
 
@@ -104,6 +120,7 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         frozenSource = sourceRect()
         mode = .draw
         enteredFromZoom = fromZoom
+        helpVisible = true
         updateCursor()
         showHUD(full: true)
     }
@@ -111,11 +128,14 @@ final class ZoomDrawView: NSView, NSTextInputClient {
     private func returnToZoom() {
         commitText()
         shapes.removeAll()
+        history.removeAll()
         current = nil
+        eraser = false
         board = .screen
         frozenSource = nil
         mode = .zoom
         enteredFromZoom = false
+        helpVisible = false
         anchor = mouse
         updateCursor()
         showHUD(full: true)
@@ -143,7 +163,6 @@ final class ZoomDrawView: NSView, NSTextInputClient {
     }
 
     private func showHUD(full: Bool) {
-        hudFull = full
         hudUntil = Date().addingTimeInterval(full ? 4 : 1.6)
         needsDisplay = true
     }
@@ -172,7 +191,9 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         current?.draw()
         draft?.draw(marked: markedText, caret: !exporting)
         guard !exporting else { return }
-        if mode == .draw, draft == nil { drawPenCursor() }
+        if mode == .draw, draft == nil {
+            if showsEraser { drawEraserCursor() } else { drawPenCursor() }
+        }
         drawHUD()
     }
 
@@ -192,20 +213,42 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         path.stroke()
     }
 
+    private var showsEraser: Bool {
+        erasingStroke || (current == nil && (eraser || Self.isQuickErase(heldFlags)))
+    }
+
+    private static func isQuickErase(_ flags: NSEvent.ModifierFlags) -> Bool {
+        flags.contains(.option) && flags.contains(.command)
+    }
+
+    private func drawEraserCursor() {
+        let r = Self.eraserRadius
+        let path = NSBezierPath(ovalIn: NSRect(x: mouse.x - r, y: mouse.y - r, width: r * 2, height: r * 2))
+        Theme.paper50.withAlphaComponent(0.35).setFill()
+        path.fill()
+        path.lineWidth = 2
+        Theme.ink900.setStroke()
+        path.stroke()
+        path.lineWidth = 1
+        Theme.paper50.setStroke()
+        path.stroke()
+    }
+
     private func drawHUD() {
         let maxWidth = bounds.width - 32
         let alpha = HUD.fadeAlpha(until: hudUntil)
-        if alpha > 0 {
-            switch mode {
-            case .zoom:
-                HUD.drawBar(zoomSegments(), style: .primary, centerX: bounds.midX, bottom: 40, maxWidth: maxWidth, alpha: alpha)
-            case .draw:
-                var bottom: CGFloat = 32
-                if hudFull {
-                    bottom += HUD.drawBar(drawHints(), style: .secondary, centerX: bounds.midX, bottom: bottom, maxWidth: maxWidth, alpha: alpha) + 8
+        switch mode {
+        case .zoom:
+            HUD.drawBar(zoomSegments(), style: .primary, centerX: bounds.midX, bottom: 40, maxWidth: maxWidth, alpha: alpha)
+        case .draw:
+            var bottom: CGFloat = 32
+            if helpVisible {
+                for row in helpRows().reversed() {
+                    bottom += HUD.drawBar(row, style: .secondary, centerX: bounds.midX, bottom: bottom, maxWidth: maxWidth, alpha: 1) + 6
                 }
-                HUD.drawBar(drawSegments(), style: .primary, centerX: bounds.midX, bottom: bottom, maxWidth: maxWidth, alpha: alpha)
+                bottom += 4
             }
+            HUD.drawBar(drawSegments(), style: .primary, centerX: bounds.midX, bottom: bottom, maxWidth: maxWidth, alpha: helpVisible ? 1 : alpha)
         }
         let toastAlpha = HUD.fadeAlpha(until: toastUntil)
         if toastAlpha > 0, let toast {
@@ -217,7 +260,7 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         let label = String(format: "%.1f×", targetZoom).replacingOccurrences(of: ".", with: ",")
         return [
             .badge(label),
-            .hint([("rolar", true), (" ou ", false), ("↑↓", true), (" aproxima", false)]),
+            .hint([("rolar", true), (", ", false), ("pinça", true), (" ou ", false), ("↑↓", true), (" aproxima", false)]),
             .hint([("clique", true), (" desenha", false)]),
             HUD.hint("esc", "sai"),
         ]
@@ -225,33 +268,65 @@ final class ZoomDrawView: NSView, NSTextInputClient {
 
     private func drawSegments() -> [HUDSegment] {
         let pen = Pens.all[penIndex]
-        let tool = draft != nil ? "texto" : (highlighter ? "marca-texto" : "caneta")
-        return [
+        var segments: [HUDSegment] = [
             .swatches(selected: penIndex, highlighter: highlighter),
             .separator,
             .penWidth(pen.color, "\(Int(effectiveWidth.rounded())) px"),
             .separator,
-            .tool(tool),
+            .tool(toolName()),
         ]
+        if !helpVisible { segments.append(HUD.hint("H", "comandos")) }
+        return segments
     }
 
-    private func drawHints() -> [HUDSegment] {
-        var hints: [HUDSegment] = [
-            HUD.hint("⇧", "linha"),
-            HUD.hint("⌃", "retângulo"),
-            HUD.hint("⌥", "elipse"),
-            HUD.hint("⌃⇧", "seta"),
-            HUD.hint("T", "texto"),
-            HUD.hint("⇧+cor", "marca-texto"),
-            HUD.hint("rolar", "espessura"),
-            HUD.hint("E", "apaga"),
-            HUD.hint("W K", "quadro"),
+    // O rótulo acompanha a tecla segurada, então dá para conferir a forma antes de arrastar.
+    private func toolName() -> String {
+        if draft != nil { return "texto" }
+        if showsEraser { return "borracha" }
+        switch current?.kind ?? kind(for: heldFlags) {
+        case .line: return "linha"
+        case .rectangle: return "retângulo"
+        case .ellipse: return "elipse"
+        case .arrow: return "seta"
+        case .freehand, .text: return highlighter ? "marca-texto" : "caneta"
+        }
+    }
+
+    // Um quadro por tipo de elemento: formas, texto e cor, quadro e arquivo.
+    private func helpRows() -> [[HUDSegment]] {
+        var board: [HUDSegment] = [
+            .group("quadro"),
+            HUD.hint("W", "branco"),
+            HUD.hint("K", "preto"),
+            HUD.hint("X", "borracha"),
+            HUD.hint("⌥⌘ clique", "apaga um"),
+            HUD.hint("E", "apaga tudo"),
             HUD.hint("⌘Z", "desfaz"),
-            HUD.hint("⌘C ⌘S", "copia, salva"),
+            HUD.hint("⌘C", "copia"),
+            HUD.hint("⌘S", "salva"),
         ]
-        if enteredFromZoom { hints.append(HUD.hint("clique direito", "volta ao zoom")) }
-        hints.append(HUD.hint("esc", "sai"))
-        return hints
+        if enteredFromZoom { board.append(HUD.hint("clique direito", "zoom")) }
+        board.append(HUD.hint("H", "esconde"))
+        board.append(HUD.hint("esc", "sai"))
+        return [
+            [
+                .group("formas"),
+                HUD.hint("1", "caneta"),
+                HUD.hint("2", "linha"),
+                HUD.hint("3", "retângulo"),
+                HUD.hint("4", "elipse"),
+                HUD.hint("5", "seta"),
+                .hint([("ou segure ⇧ ⌃ ⌥ ⌃⇧ ao arrastar", false)]),
+            ],
+            [
+                .group("texto e cor"),
+                HUD.hint("T", "escreve no cursor"),
+                HUD.hint("R G B O Y P", "cor"),
+                HUD.hint("⇧+cor", "marca-texto"),
+                HUD.hint("rolar ou pinça", "espessura"),
+            ],
+            board,
+        ]
     }
 
     // MARK: - Mouse
@@ -271,9 +346,19 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         mouse = location
         if mode == .zoom { enterDraw(fromZoom: true) }
         commitText()
+        helpVisible = false
         dragStart = location
+        heldFlags = Self.shapeFlags(event.modifierFlags)
+        if eraser || Self.isQuickErase(heldFlags) {
+            erasingStroke = true
+            erasedThisStroke = false
+            lastErasePoint = location
+            erase(along: location)
+            needsDisplay = true
+            return
+        }
         current = Shape(
-            kind: Shape.kind(for: event.modifierFlags),
+            kind: kind(for: heldFlags),
             points: [location],
             color: Pens.all[penIndex].color,
             width: effectiveWidth,
@@ -284,16 +369,73 @@ final class ZoomDrawView: NSView, NSTextInputClient {
 
     override func mouseDragged(with event: NSEvent) {
         mouse = point(event)
+        if erasingStroke {
+            erase(along: mouse)
+            needsDisplay = true
+            return
+        }
         updateCurrentShape(flags: event.modifierFlags)
+    }
+
+    // Amostra o caminho entre dois eventos de arraste: um gesto rápido não pula itens finos.
+    private func erase(along target: CGPoint) {
+        let distance = hypot(target.x - lastErasePoint.x, target.y - lastErasePoint.y)
+        let steps = max(1, Int(distance / 4))
+        for step in 0 ... steps {
+            let t = CGFloat(step) / CGFloat(steps)
+            let sample = CGPoint(
+                x: lastErasePoint.x + (target.x - lastErasePoint.x) * t,
+                y: lastErasePoint.y + (target.y - lastErasePoint.y) * t
+            )
+            guard shapes.contains(where: { $0.hit(sample, radius: Self.eraserRadius) }) else { continue }
+            if !erasedThisStroke {
+                checkpoint()
+                erasedThisStroke = true
+            }
+            shapes.removeAll { $0.hit(sample, radius: Self.eraserRadius) }
+        }
+        lastErasePoint = target
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        if current != nil || erasingStroke { mouseDragged(with: event) }
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        if current != nil || erasingStroke { mouseUp(with: event) }
+    }
+
+    private func kind(for flags: NSEvent.ModifierFlags) -> Shape.Kind {
+        let held = Shape.kind(for: flags)
+        return held == .freehand ? tool : held
+    }
+
+    private func checkpoint() {
+        history.append(shapes)
+        if history.count > 200 { history.removeFirst() }
     }
 
     override func flagsChanged(with event: NSEvent) {
-        updateCurrentShape(flags: event.modifierFlags)
+        if current != nil {
+            updateCurrentShape(flags: event.modifierFlags)
+            return
+        }
+        heldFlags = Self.shapeFlags(event.modifierFlags)
+        if mode == .draw, draft == nil { showHUD(full: false) }
     }
 
+    private static func shapeFlags(_ flags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
+        flags.intersection([.shift, .control, .option, .command])
+    }
+
+    // Soltar a tecla antes do botão do mouse é o gesto natural; se isso trocasse a forma, o
+    // retângulo viraria um traço no fim do arraste. Só apertar uma tecla muda a forma.
     private func updateCurrentShape(flags: NSEvent.ModifierFlags) {
         guard var shape = current else { return }
-        let kind = Shape.kind(for: flags)
+        let held = Self.shapeFlags(flags)
+        let pressed = !held.subtracting(heldFlags).isEmpty
+        heldFlags = held
+        let kind = pressed ? Shape.kind(for: held) : shape.kind
         if kind == .freehand {
             if shape.kind != .freehand { shape.points = [dragStart] }
             shape.points.append(mouse)
@@ -306,12 +448,22 @@ final class ZoomDrawView: NSView, NSTextInputClient {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if let shape = current { shapes.append(shape) }
+        erasingStroke = false
+        if let shape = current {
+            checkpoint()
+            shapes.append(shape)
+        }
         current = nil
+        heldFlags = Self.shapeFlags(event.modifierFlags)
         needsDisplay = true
     }
 
+    // O macOS pode entregar ⌃+clique como clique direito. No desenho ele é o retângulo, não a saída.
     override func rightMouseDown(with event: NSEvent) {
+        if mode == .draw, event.modifierFlags.contains(.control) {
+            mouseDown(with: event)
+            return
+        }
         if mode == .draw, enteredFromZoom {
             returnToZoom()
         } else {
@@ -336,6 +488,19 @@ final class ZoomDrawView: NSView, NSTextInputClient {
                 showHUD(full: false)
             }
         }
+        needsDisplay = true
+    }
+
+    // A pinça do trackpad aproxima no zoom; no desenho ela muda a espessura, como a rolagem.
+    override func magnify(with event: NSEvent) {
+        switch mode {
+        case .zoom:
+            targetZoom = (targetZoom * (1 + event.magnification)).clamped(1, 16)
+        case .draw:
+            guard draft == nil else { return }
+            penWidth = (penWidth * (1 + event.magnification)).clamped(1, 60)
+        }
+        showHUD(full: false)
         needsDisplay = true
     }
 
@@ -368,8 +533,8 @@ final class ZoomDrawView: NSView, NSTextInputClient {
             if draft != nil {
                 draft = nil
                 markedText = ""
-            } else if !shapes.isEmpty {
-                shapes.removeLast()
+            } else if let previous = history.popLast() {
+                shapes = previous
             }
         case "c": copyImage()
         case "s": saveImage()
@@ -380,8 +545,8 @@ final class ZoomDrawView: NSView, NSTextInputClient {
 
     private func handleZoomKey(_ event: NSEvent) {
         switch Int(event.keyCode) {
-        case kVK_UpArrow: targetZoom = (targetZoom * 1.25).clamped(1, 16)
-        case kVK_DownArrow: targetZoom = (targetZoom / 1.25).clamped(1, 16)
+        case kVK_UpArrow, kVK_ANSI_Equal, kVK_ANSI_KeypadPlus: targetZoom = (targetZoom * 1.25).clamped(1, 16)
+        case kVK_DownArrow, kVK_ANSI_Minus, kVK_ANSI_KeypadMinus: targetZoom = (targetZoom / 1.25).clamped(1, 16)
         default: return
         }
         showHUD(full: false)
@@ -391,14 +556,27 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         if let index = Pens.index(forKey: key) {
             penIndex = index
             highlighter = shift
+            eraser = false
             showHUD(full: false)
             return
         }
         switch key {
-        case "e": shapes.removeAll()
+        case "e":
+            if !shapes.isEmpty {
+                checkpoint()
+                shapes.removeAll()
+            }
+        case "x":
+            eraser.toggle()
+            showHUD(full: false)
+        case "1", "2", "3", "4", "5":
+            tool = Self.toolKeys[key] ?? .freehand
+            eraser = false
+            showHUD(full: false)
         case "w": board = board == .white ? .screen : .white
         case "k": board = board == .black ? .screen : .black
         case "t": startText()
+        case "h": helpVisible.toggle()
         default: return
         }
         needsDisplay = true
@@ -406,6 +584,7 @@ final class ZoomDrawView: NSView, NSTextInputClient {
 
     private func startText() {
         commitText()
+        eraser = false
         draft = TextDraft(origin: mouse, text: "", fontSize: textSize, color: Pens.all[penIndex].color)
         showHUD(full: false)
     }
@@ -415,7 +594,10 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         draft = nil
         markedText = ""
         inputContext?.discardMarkedText()
-        if !finished.text.isEmpty { shapes.append(Shape(text: finished)) }
+        if !finished.text.isEmpty {
+            checkpoint()
+            shapes.append(Shape(text: finished))
+        }
         needsDisplay = true
     }
 

@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var hotKeyIDs: [UInt32] = []
     private var liveHotKeyIDs: [UInt32] = []
+    private let liveInput = LiveZoomInput()
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -43,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         live.onStop = { [weak self] in self?.unregisterLiveHotKeys() }
         recording.shortcutLabel = { [weak self] in self?.prefs.shortcuts[.record]?.displayString ?? "" }
         recording.onChange = { [weak self] in self?.updateRecordingState() }
-        requestPermissionOnFirstLaunch()
+        requestPermissionIfNeeded()
     }
 
     // MARK: - Barra de menus
@@ -184,22 +185,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hotKeyIDs.removeAll()
     }
 
-    // No zoom ao vivo a Lupa não tem o teclado: ⌃= e ⌃- valem só enquanto ele está ligado.
+    // No zoom ao vivo a Lupa não tem o teclado: estes atalhos valem só enquanto ele está ligado.
+    // O esc global também; fora do zoom ao vivo ele volta para os apps.
     private func registerLiveHotKeys() {
         unregisterLiveHotKeys()
         let control = NSEvent.ModifierFlags.control.rawValue
-        let bindings: [(Int, CGFloat)] = [(kVK_ANSI_Equal, 1.25), (kVK_ANSI_Minus, 0.8)]
-        for (key, factor) in bindings {
-            let shortcut = Shortcut(keyCode: UInt32(key), modifiers: control)
-            if let id = HotKeyCenter.shared.register(shortcut, handler: { [weak self] in self?.live.adjust(by: factor) }) {
-                liveHotKeyIDs.append(id)
+        let controlShift = control | NSEvent.ModifierFlags.shift.rawValue
+        // ⌃⇧= também, porque no teclado o "+" é ⇧= e é nele que a mão vai para aproximar.
+        let bindings: [(Int, UInt, () -> Void)] = [
+            (kVK_ANSI_Equal, control, { [weak self] in self?.live.adjust(by: 1.25) }),
+            (kVK_ANSI_Equal, controlShift, { [weak self] in self?.live.adjust(by: 1.25) }),
+            (kVK_ANSI_KeypadPlus, control, { [weak self] in self?.live.adjust(by: 1.25) }),
+            (kVK_ANSI_Minus, control, { [weak self] in self?.live.adjust(by: 0.8) }),
+            (kVK_ANSI_KeypadMinus, control, { [weak self] in self?.live.adjust(by: 0.8) }),
+            (kVK_ANSI_0, control, { [weak self] in self?.live.reset() }),
+            (kVK_Escape, 0, { [weak self] in self?.live.stop(animated: true) }),
+        ]
+        // O log (Console, processo Lupa) diz se o atalho registrou e se disparou: é o que separa
+        // "o macOS não entrega a tecla" de "o zoom recebeu e não mudou".
+        for (key, modifiers, handler) in bindings {
+            let shortcut = Shortcut(keyCode: UInt32(key), modifiers: modifiers)
+            let id = HotKeyCenter.shared.register(shortcut) {
+                NSLog("Lupa zoom ao vivo: atalho %@ disparou", shortcut.displayString)
+                handler()
             }
+            if let id {
+                liveHotKeyIDs.append(id)
+            } else {
+                NSLog("Lupa zoom ao vivo: atalho %@ (tecla %ld) não registrou", shortcut.displayString, key)
+            }
+        }
+        liveInput.onZoom = { [weak self] factor in self?.live.adjust(by: factor) }
+        liveInput.start()
+        NSLog("Lupa zoom ao vivo: gestos %@", liveInput.consumesGestures ? "pelo event tap (consome)" : "pelo monitor global (só escuta)")
+        live.setGestureNote(liveInput.consumesGestures ? nil : "permita a Lupa em Acessibilidade para a pinça não chegar ao app")
+        let askedKey = "askedAccessibilityForLiveZoom"
+        if !liveInput.consumesGestures, !UserDefaults.standard.bool(forKey: askedKey) {
+            UserDefaults.standard.set(true, forKey: askedKey)
+            LiveZoomInput.requestAccessibility()
         }
     }
 
     private func unregisterLiveHotKeys() {
         liveHotKeyIDs.forEach { HotKeyCenter.shared.unregister($0) }
         liveHotKeyIDs.removeAll()
+        liveInput.stop()
     }
 
     // MARK: - Modos
@@ -217,7 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .breakTimer:
             if breakView != nil { closeBreak() } else { startBreak() }
         case .liveZoom:
-            if live.isActive { live.stop() } else { startLive() }
+            if live.isActive { live.stop(animated: true) } else { startLive() }
         case .record:
             recording.toggle()
         }
@@ -327,10 +357,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Permissão
 
-    private func requestPermissionOnFirstLaunch() {
-        let key = "didLaunchBefore"
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
-        UserDefaults.standard.set(true, forKey: key)
+    // O macOS só mostra o pedido uma vez por autorização; depois de zerada (assinatura nova),
+    // pedir de novo na abertura recoloca a Lupa na lista em vez de esperar o primeiro atalho.
+    private func requestPermissionIfNeeded() {
         if !ScreenCapture.hasPermission { CGRequestScreenCaptureAccess() }
     }
 
@@ -349,6 +378,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Para aproximar e desenhar, a Lupa tira uma foto da tela na hora do atalho. Nada é gravado em disco nem sai do seu Mac.
 
         Ligue a Lupa em Ajustes do Sistema › Privacidade e Segurança › Gravação de Tela e Áudio do Sistema e abra a Lupa de novo.
+
+        Se ela já aparece ligada, a autorização é de uma versão anterior: selecione a Lupa na lista, clique em − e abra a Lupa de novo.
         """
         alert.addButton(withTitle: "Abrir Ajustes do Sistema")
         alert.addButton(withTitle: "Agora não")

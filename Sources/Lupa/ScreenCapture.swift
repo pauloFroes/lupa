@@ -3,10 +3,12 @@ import ScreenCaptureKit
 
 enum CaptureError: LocalizedError {
     case displayNotFound
+    case cannotExcludeSelf
 
     var errorDescription: String? {
         switch self {
         case .displayNotFound: "Não achei a tela onde está o cursor."
+        case .cannotExcludeSelf: "Não consegui tirar a própria Lupa da captura; o zoom ao vivo se filmaria."
         }
     }
 }
@@ -31,15 +33,18 @@ enum ScreenCapture {
         return number?.uint32Value ?? CGMainDisplayID()
     }
 
-    // As janelas da própria Lupa ficam fora da captura: sem isso o zoom ao vivo se filmaria.
-    static func filter(for screen: NSScreen) async throws -> SCContentFilter {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    // As janelas da própria Lupa ficam fora da captura: sem isso o zoom ao vivo filma a si
+    // mesmo e aproxima sem parar. Com onScreenWindowsOnly a Lupa (só barra de menus) podia
+    // não estar na lista de apps, e o filtro não excluía nada; por isso a lista completa.
+    static func filter(for screen: NSScreen, requireExclusion: Bool = false) async throws -> SCContentFilter {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         let id = displayID(of: screen)
         guard let display = content.displays.first(where: { $0.displayID == id }) else {
             throw CaptureError.displayNotFound
         }
         let pid = ProcessInfo.processInfo.processIdentifier
         let ownApps = content.applications.filter { $0.processID == pid }
+        if requireExclusion, ownApps.isEmpty { throw CaptureError.cannotExcludeSelf }
         return SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
     }
 

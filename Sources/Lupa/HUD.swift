@@ -81,6 +81,22 @@ enum HUD {
         return m.height * scale
     }
 
+    // Selo lime com ponto, rótulo e valor em mono, como o "AO VIVO" do design.
+    static func drawBadgeRow(label: String, value: String, origin: CGPoint) {
+        let text = NSAttributedString(string: "\(label)  \(value)", attributes: [
+            .font: Theme.mono(13, .semibold),
+            .foregroundColor: Theme.ink1000,
+            .kern: 1.0,
+        ])
+        let size = text.size()
+        let rect = NSRect(x: origin.x, y: origin.y, width: ceil(size.width) + 44, height: 36)
+        Theme.lime.setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 18, yRadius: 18).fill()
+        Theme.ink1000.setFill()
+        NSBezierPath(ovalIn: NSRect(x: rect.minX + 14, y: rect.midY - 4, width: 8, height: 8)).fill()
+        text.draw(at: CGPoint(x: rect.minX + 30, y: rect.midY - size.height / 2))
+    }
+
     static func fadeAlpha(until: Date, now: Date = Date()) -> CGFloat {
         let remaining = until.timeIntervalSince(now)
         if remaining >= 0 { return 1 }

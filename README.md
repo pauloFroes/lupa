@@ -16,7 +16,7 @@ A Lupa fica na barra de menus do Mac, sem ícone no Dock, e entra em ação com 
 | `⌃1` | Zoom | Congela a tela e aproxima em torno do cursor. Role ou use `↑` `↓` para mudar o zoom; mova o mouse para navegar. Clique para desenhar ali mesmo; `esc` sai. |
 | `⌃2` | Desenhar | Desenha sobre a tela congelada (ou sobre o zoom, se você veio do `⌃1`). |
 | `⌃3` | Intervalo | Cronômetro em tela cheia. `↑` `↓` somam ou tiram 1 minuto, `espaço` pausa, `esc` volta à apresentação. |
-| `⌃4` | Zoom ao vivo | Zoom que acompanha o cursor enquanto você usa os apps; o clique vai para o app embaixo. `⌃=` e `⌃-` mudam o zoom. |
+| `⌃4` | Zoom ao vivo | Zoom que acompanha o cursor enquanto você usa os apps; o clique vai para o app embaixo. `⌃=` e `⌃-` (ou `⌃` + rolar) mudam o zoom, entre 1,25× e 8×; `⌃0` volta ao zoom inicial; `esc` ou `⌃4` sai. O selo mostra o nível atual. |
 | `⌃5` | Gravar tela | Abre o painel de gravação; com a gravação rodando, o mesmo atalho para. |
 
 ### No desenho
@@ -25,7 +25,8 @@ A Lupa fica na barra de menus do Mac, sem ícone no Dock, e entra em ação com 
 - **Formas, segurando a tecla enquanto arrasta:** `⇧` linha, `⌃` (ou `⌘`) retângulo, `⌥` elipse, `⌃⇧` seta. Pode soltar a tecla antes do mouse: a forma fica. O rótulo da barra mostra a forma da tecla segurada antes de você arrastar.
 - **Texto:** `T` escreve onde está o cursor (acentos funcionam); `esc` termina o texto.
 - **Espessura:** role o mouse (no texto, muda o tamanho da letra).
-- **Quadro:** `W` branco, `K` preto, `E` apaga tudo, `⌘Z` desfaz.
+- **Apagar:** `X` liga a borracha (clique ou arraste sobre um traço, forma ou texto para apagar só ele; `X` de novo ou uma cor volta à caneta). Com `⌥⌘`, um clique apaga um item sem trocar de ferramenta. `E` apaga tudo, e `⌘Z` desfaz, inclusive a borracha.
+- **Quadro:** `W` branco, `K` preto.
 - **Guardar:** `⌘C` copia a imagem; `⌘S` salva um PNG na Mesa.
 - **Comandos:** ao entrar no desenho, a Lupa mostra os comandos por tipo de elemento (formas, texto e cor, quadro). Eles somem no primeiro traço; `H` mostra e esconde.
 - Clique direito volta do desenho para o zoom; `esc` sai de tudo.

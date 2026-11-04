@@ -14,19 +14,35 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private var ticker: Timer?
     private var zoom: CGFloat = 1
     private var targetZoom: CGFloat = 2
+    private var initialZoom: CGFloat = 2
+    private var hud: LiveHUDView?
     private let contentLayer = CALayer()
+    static let zoomRange: ClosedRange<CGFloat> = 1.25 ... 8
     private let queue = DispatchQueue(label: "lupa.live-zoom")
 
     func start(on screen: NSScreen, zoom initialZoom: CGFloat) async throws {
-        let filter = try await ScreenCapture.filter(for: screen)
-        let configuration = ScreenCapture.configuration(for: screen)
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-        configuration.queueDepth = 5
-        let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
-        try await stream.startCapture()
-        await MainActor.run {
-            self.present(on: screen, stream: stream, zoom: initialZoom)
+        // A janela vazia entra na tela antes do filtro, então a Lupa com certeza está na lista
+        // de apps que o filtro exclui.
+        let window = await MainActor.run { () -> OverlayWindow in
+            let window = OverlayWindow(screen: screen)
+            window.ignoresMouseEvents = true
+            window.orderFrontRegardless()
+            return window
+        }
+        do {
+            let filter = try await ScreenCapture.filter(for: screen, requireExclusion: true)
+            let configuration = ScreenCapture.configuration(for: screen)
+            configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
+            configuration.queueDepth = 5
+            let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
+            try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
+            try await stream.startCapture()
+            await MainActor.run {
+                self.present(in: window, on: screen, stream: stream, zoom: initialZoom)
+            }
+        } catch {
+            await MainActor.run { window.orderOut(nil) }
+            throw error
         }
     }
 
@@ -41,19 +57,25 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         stream = nil
         window?.orderOut(nil)
         window = nil
+        hud = nil
         contentLayer.contents = nil
         contentLayer.removeFromSuperlayer()
         onStop?()
     }
 
     func adjust(by factor: CGFloat) {
-        targetZoom = (targetZoom * factor).clamped(1.25, 16)
+        guard isActive else { return }
+        targetZoom = (targetZoom * factor).clamped(Self.zoomRange.lowerBound, Self.zoomRange.upperBound)
+        hud?.show(zoom: targetZoom)
     }
 
-    private func present(on screen: NSScreen, stream: SCStream, zoom initialZoom: CGFloat) {
-        let window = OverlayWindow(screen: screen)
-        window.ignoresMouseEvents = true
+    func reset() {
+        guard isActive else { return }
+        targetZoom = initialZoom
+        hud?.show(zoom: targetZoom)
+    }
 
+    private func present(in window: OverlayWindow, on screen: NSScreen, stream: SCStream, zoom initialZoom: CGFloat) {
         let size = screen.frame.size
         let view = NSView(frame: NSRect(origin: .zero, size: size))
         view.wantsLayer = true
@@ -69,18 +91,20 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         border.borderWidth = 4
         view.layer?.addSublayer(border)
 
-        let badge = LiveBadgeView(frame: NSRect(x: 24, y: size.height - 24 - 32, width: 104, height: 32))
-        view.addSubview(badge)
+        let hud = LiveHUDView(frame: view.bounds)
+        view.addSubview(hud)
+        self.hud = hud
 
         window.contentView = view
-        window.orderFrontRegardless()
 
         self.window = window
         self.stream = stream
         self.screen = screen
         zoom = 1
-        targetZoom = initialZoom
+        self.initialZoom = initialZoom.clamped(Self.zoomRange.lowerBound, Self.zoomRange.upperBound)
+        targetZoom = self.initialZoom
         isActive = true
+        hud.show(zoom: targetZoom)
 
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.updateTransform() }
         RunLoop.main.add(timer, forMode: .common)
@@ -89,7 +113,9 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
 
     private func updateTransform() {
         guard let screen else { return }
+        hud?.tick()
         zoom += (targetZoom - zoom) * 0.2
+        if abs(targetZoom - zoom) < 0.002 { zoom = targetZoom }
         let frame = screen.frame
         let mouse = NSEvent.mouseLocation
         let point = CGPoint(
@@ -128,18 +154,40 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 }
 
-private final class LiveBadgeView: NSView {
+// Selo "AO VIVO" com o nível do zoom, sempre visível, e a barra de comandos, que aparece ao
+// ligar e a cada mudança de zoom e some sozinha.
+private final class LiveHUDView: NSView {
+    private var zoom: CGFloat = 2
+    private var hintsUntil = Date.distantPast
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func show(zoom: CGFloat) {
+        self.zoom = zoom
+        hintsUntil = Date().addingTimeInterval(3)
+        needsDisplay = true
+    }
+
+    func tick() {
+        if Date() < hintsUntil.addingTimeInterval(0.4) { needsDisplay = true }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
-        Theme.lime.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
-        Theme.ink1000.setFill()
-        NSBezierPath(ovalIn: NSRect(x: 12, y: bounds.midY - 4, width: 8, height: 8)).fill()
-        let label = NSAttributedString(string: "AO VIVO", attributes: [
-            .font: Theme.mono(12, .semibold),
-            .foregroundColor: Theme.ink1000,
-            .kern: 1.2,
-        ])
-        let size = label.size()
-        label.draw(at: CGPoint(x: 28, y: bounds.midY - size.height / 2))
+        let level = String(format: "%.1f×", zoom).replacingOccurrences(of: ".", with: ",")
+        HUD.drawBadgeRow(label: "AO VIVO", value: level, origin: CGPoint(x: 24, y: bounds.height - 24 - 36))
+        HUD.drawBar(
+            [
+                .badge(level),
+                HUD.hint("⌃=  ⌃-", "zoom"),
+                HUD.hint("⌃ rolar", "zoom"),
+                HUD.hint("⌃0", "volta ao inicial"),
+                HUD.hint("esc", "sai"),
+            ],
+            style: .primary,
+            centerX: bounds.midX,
+            bottom: 40,
+            maxWidth: bounds.width - 32,
+            alpha: HUD.fadeAlpha(until: hintsUntil)
+        )
     }
 }

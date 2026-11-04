@@ -28,17 +28,23 @@ struct TextDraft {
         Self.draw(full, at: origin)
     }
 
+    var frame: NSRect { Self.frame(of: attributed(text), at: origin) }
+
+    private static let options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
+
     // A origem é o canto superior esquerdo do texto: ele cresce para baixo, como num editor.
-    static func draw(_ string: NSAttributedString, at origin: CGPoint) {
-        let options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
+    static func frame(of string: NSAttributedString, at origin: CGPoint) -> NSRect {
         let size = string.boundingRect(with: CGSize(width: 10000, height: 10000), options: options).size
-        let rect = NSRect(
+        return NSRect(
             x: origin.x,
             y: origin.y - ceil(size.height),
             width: ceil(size.width) + 4,
             height: ceil(size.height)
         )
-        string.draw(with: rect, options: options)
+    }
+
+    static func draw(_ string: NSAttributedString, at origin: CGPoint) {
+        string.draw(with: frame(of: string, at: origin), options: options)
     }
 }
 
@@ -131,6 +137,49 @@ struct Shape {
             break
         }
         path.stroke()
+    }
+
+    // A borracha toca o contorno: clicar dentro de um retângulo grande não apaga o retângulo
+    // quando o alvo é um traço desenhado lá dentro.
+    func hit(_ point: CGPoint, radius: CGFloat) -> Bool {
+        let reach = radius + width / 2
+        switch kind {
+        case .text:
+            return text?.frame.insetBy(dx: -radius, dy: -radius).contains(point) ?? false
+        case .freehand:
+            guard points.count > 1 else { return points.first.map { hypot($0.x - point.x, $0.y - point.y) <= reach } ?? false }
+            return Self.near(polyline: points, point, reach)
+        case .line, .arrow:
+            return Self.near(polyline: [points.first ?? .zero, points.last ?? .zero], point, reach)
+        case .rectangle:
+            let r = Self.rect(points.first ?? .zero, points.last ?? .zero)
+            let corners = [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY), CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY), CGPoint(x: r.minX, y: r.minY)]
+            return Self.near(polyline: corners, point, reach)
+        case .ellipse:
+            let r = Self.rect(points.first ?? .zero, points.last ?? .zero)
+            let outline = (0 ... 64).map { step -> CGPoint in
+                let angle = CGFloat(step) / 64 * 2 * .pi
+                return CGPoint(x: r.midX + r.width / 2 * cos(angle), y: r.midY + r.height / 2 * sin(angle))
+            }
+            return Self.near(polyline: outline, point, reach)
+        }
+    }
+
+    private static func near(polyline: [CGPoint], _ point: CGPoint, _ reach: CGFloat) -> Bool {
+        guard polyline.count > 1 else { return false }
+        for index in 1 ..< polyline.count where distance(point, polyline[index - 1], polyline[index]) <= reach {
+            return true
+        }
+        return false
+    }
+
+    private static func distance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        let lengthSquared = dx * dx + dy * dy
+        guard lengthSquared > 0 else { return hypot(p.x - a.x, p.y - a.y) }
+        let t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared).clamped(0, 1)
+        return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
     }
 
     private func appendArrowHead(to path: NSBezierPath, from start: CGPoint, to end: CGPoint) {

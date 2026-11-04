@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var hotKeyIDs: [UInt32] = []
     private var liveHotKeyIDs: [UInt32] = []
+    private var liveScrollMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -184,22 +185,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hotKeyIDs.removeAll()
     }
 
-    // No zoom ao vivo a Lupa não tem o teclado: ⌃= e ⌃- valem só enquanto ele está ligado.
+    // No zoom ao vivo a Lupa não tem o teclado: estes atalhos valem só enquanto ele está ligado.
+    // O esc global também; fora do zoom ao vivo ele volta para os apps.
     private func registerLiveHotKeys() {
         unregisterLiveHotKeys()
         let control = NSEvent.ModifierFlags.control.rawValue
-        let bindings: [(Int, CGFloat)] = [(kVK_ANSI_Equal, 1.25), (kVK_ANSI_Minus, 0.8)]
-        for (key, factor) in bindings {
-            let shortcut = Shortcut(keyCode: UInt32(key), modifiers: control)
-            if let id = HotKeyCenter.shared.register(shortcut, handler: { [weak self] in self?.live.adjust(by: factor) }) {
+        let bindings: [(Int, UInt, () -> Void)] = [
+            (kVK_ANSI_Equal, control, { [weak self] in self?.live.adjust(by: 1.25) }),
+            (kVK_ANSI_KeypadPlus, control, { [weak self] in self?.live.adjust(by: 1.25) }),
+            (kVK_ANSI_Minus, control, { [weak self] in self?.live.adjust(by: 0.8) }),
+            (kVK_ANSI_KeypadMinus, control, { [weak self] in self?.live.adjust(by: 0.8) }),
+            (kVK_ANSI_0, control, { [weak self] in self?.live.reset() }),
+            (kVK_Escape, 0, { [weak self] in self?.live.stop() }),
+        ]
+        for (key, modifiers, handler) in bindings {
+            if let id = HotKeyCenter.shared.register(Shortcut(keyCode: UInt32(key), modifiers: modifiers), handler: handler) {
                 liveHotKeyIDs.append(id)
             }
+        }
+        // Monitor global de rolagem não pede Acessibilidade; o app embaixo também recebe a rolagem.
+        liveScrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard event.modifierFlags.contains(.control), event.scrollingDeltaY != 0 else { return }
+            let step = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 30 : event.scrollingDeltaY
+            self?.live.adjust(by: pow(1.12, step))
         }
     }
 
     private func unregisterLiveHotKeys() {
         liveHotKeyIDs.forEach { HotKeyCenter.shared.unregister($0) }
         liveHotKeyIDs.removeAll()
+        if let liveScrollMonitor { NSEvent.removeMonitor(liveScrollMonitor) }
+        liveScrollMonitor = nil
     }
 
     // MARK: - Modos

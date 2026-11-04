@@ -38,6 +38,17 @@ struct Spring {
         }
     }
 
+    // Mantém o valor na faixa e tira a velocidade que empurra para fora dela.
+    mutating func confine(to range: ClosedRange<Double>) {
+        if value < range.lowerBound {
+            value = range.lowerBound
+            velocity = max(velocity, 0)
+        } else if value > range.upperBound {
+            value = range.upperBound
+            velocity = min(velocity, 0)
+        }
+    }
+
     // Segue um valor calculado por fora, guardando a velocidade para a mola continuar sem tranco.
     mutating func drive(to newValue: Double, dt: Double) {
         velocity = dt > 0 ? (newValue - value) / dt : 0

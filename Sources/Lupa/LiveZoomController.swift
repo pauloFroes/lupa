@@ -4,10 +4,10 @@ import CoreMedia
 import ScreenCaptureKit
 
 // Zoom ao vivo: um SCStream da tela (sem as janelas da Lupa) desenhado numa janela que não
-// recebe clique. A câmera acompanha o cursor (LiveCursor, que segue o mouse com uma mola) a todo
-// momento e chega à borda da tela antes dele. Encostada, ela para e só o cursor anda até a
-// borda. O cursor é desenhado onde o ponto real do mouse
-// aparece na imagem ampliada, então, parado, o clique cai exatamente no que está sob ele.
+// recebe clique. A câmera persegue o cursor (LiveCursor, que segue o mouse com uma mola) para
+// centralizá-lo, com um leve atraso, e chega à borda da tela antes dele. Encostada, ela para e só
+// o cursor anda até a borda. O cursor é desenhado onde o ponto real do mouse aparece na imagem
+// ampliada, então, parado, o clique cai exatamente no que está sob ele.
 // A entrada espera o primeiro quadro, para começar em 1× idêntica à tela, e a saída faz o caminho
 // inverso pela mesma curva.
 final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
@@ -27,8 +27,8 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private var border: CALayer?
     // O zoom anda em escala logarítmica: 2× → 4× leva o mesmo tempo que 4× → 8×, como o olho espera.
     private var logZoom = Spring(value: 0, response: 0.42)
-    private var cameraX = Spring(value: 0, response: 0.22)
-    private var cameraY = Spring(value: 0, response: 0.22)
+    private var cameraX = Spring(value: 0, response: 0.53)
+    private var cameraY = Spring(value: 0, response: 0.53)
     private var cursor: LiveCursor?
     private var cursorOnScreen = true
     private var prefsObserver: AnyCancellable?
@@ -37,9 +37,8 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private var hud: LiveHUDView?
     private let contentLayer = CALayer()
     static let zoomRange: ClosedRange<CGFloat> = 1 ... 8
-    // Quanto a câmera se adianta rumo à borda: 0 só mostra a borda com o mouse nela; 1 mantém o
-    // cursor no centro até a câmera encostar. Abaixo de 1 para o zoom 1× não dividir por 0.
-    static let edgeReach = 0.85
+    // Fração do trecho visível, em cada lado, que o cursor nunca invade por atraso da câmera.
+    static let cursorMargin = 0.1
     static let transitionDuration = 0.7
     static let fadeDuration = 0.3
     private let queue = DispatchQueue(label: "lupa.live-zoom")
@@ -308,22 +307,22 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     // Um eixo da câmera; o valor é o início do trecho visível, em pontos da tela real.
     private static func move(_ camera: inout Spring, cursor: Double, length: Double, from previousZoom: Double, to zoom: Double, dt: Double) {
         let visible = length / zoom
-        let limit = length - visible
+        // A mola pode passar de 1× por um fio, e a faixa abaixo não aceita limite negativo.
+        let limit = max(0, length - visible)
         // Ao mudar o zoom, o cursor fica onde está na tela e a imagem cresce em torno dele.
         let ratio = previousZoom / zoom
         camera.value = (cursor - (cursor - camera.value) * ratio).clamped(0, limit)
         camera.target = cameraTarget(cursor: cursor, length: length, zoom: zoom)
         camera.step(dt)
-        camera.value = camera.value.clamped(0, limit)
+        let margin = cursorMargin * visible
+        camera.confine(to: (cursor - visible + margin) ... (cursor - margin))
+        camera.confine(to: 0 ... limit)
     }
 
-    // Início do trecho visível para o cursor num eixo. Dentro de `margin` da borda a câmera já
-    // encostou; entre as margens ela percorre todo o resto, sempre com o cursor no trecho.
+    // Início do trecho visível com o cursor no centro; perto da borda da tela, encosta nela.
     private static func cameraTarget(cursor: Double, length: Double, zoom: Double) -> Double {
         let visible = length / zoom
-        let margin = edgeReach * visible / 2
-        let progress = ((cursor - margin) / (length - 2 * margin)).clamped(0, 1)
-        return progress * (length - visible)
+        return (cursor - visible / 2).clamped(0, length - visible)
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {

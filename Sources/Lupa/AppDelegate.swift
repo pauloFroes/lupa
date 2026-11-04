@@ -1,0 +1,306 @@
+import AppKit
+import Carbon.HIToolbox
+import Combine
+
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private let prefs = Preferences.shared
+    private let settings = SettingsWindowController()
+    private let live = LiveZoomController()
+
+    private var statusItem: NSStatusItem?
+    private var actionItems: [Action: NSMenuItem] = [:]
+    private var loginItem: NSMenuItem?
+
+    private var overlayWindow: OverlayWindow?
+    private var zoomView: ZoomDrawView?
+    private var breakWindow: OverlayWindow?
+    private var breakView: BreakTimerView?
+    private var previousApp: NSRunningApplication?
+    private var capturing = false
+
+    private var hotKeyIDs: [UInt32] = []
+    private var liveHotKeyIDs: [UInt32] = []
+    private var cancellables = Set<AnyCancellable>()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        setupStatusItem()
+        registerHotKeys(prefs.shortcuts)
+        prefs.$shortcuts
+            .dropFirst()
+            .sink { [weak self] shortcuts in
+                self?.registerHotKeys(shortcuts)
+                self?.updateMenuShortcuts(shortcuts)
+            }
+            .store(in: &cancellables)
+        settings.recorder.onBegin = { [weak self] in self?.unregisterHotKeys() }
+        settings.recorder.onEnd = { [weak self] in
+            guard let self else { return }
+            registerHotKeys(prefs.shortcuts)
+        }
+        live.onStop = { [weak self] in self?.unregisterLiveHotKeys() }
+        requestPermissionOnFirstLaunch()
+    }
+
+    // MARK: - Barra de menus
+
+    private func setupStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let image = NSImage(systemSymbolName: "plus.magnifyingglass", accessibilityDescription: "Lupa")
+        image?.isTemplate = true
+        item.button?.image = image
+
+        let menu = NSMenu()
+        menu.delegate = self
+        for action in Action.allCases {
+            let entry = NSMenuItem(title: action.title, action: #selector(menuAction(_:)), keyEquivalent: "")
+            entry.representedObject = action.rawValue
+            entry.target = self
+            menu.addItem(entry)
+            actionItems[action] = entry
+        }
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Ajustes…", #selector(openSettings), key: ","))
+        let login = menuItem("Abrir ao iniciar sessão", #selector(toggleLogin))
+        menu.addItem(login)
+        loginItem = login
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Sobre a Lupa", #selector(showAbout)))
+        let quit = NSMenuItem(title: "Sair da Lupa", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(quit)
+
+        item.menu = menu
+        statusItem = item
+        updateMenuShortcuts(prefs.shortcuts)
+    }
+
+    private func menuItem(_ title: String, _ selector: Selector, key: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
+        item.target = self
+        return item
+    }
+
+    private func updateMenuShortcuts(_ shortcuts: [Action: Shortcut]) {
+        for (action, item) in actionItems {
+            if let shortcut = shortcuts[action], let key = KeyNames.keyEquivalent(for: shortcut.keyCode) {
+                item.keyEquivalent = key
+                item.keyEquivalentModifierMask = shortcut.flags
+            } else {
+                item.keyEquivalent = ""
+            }
+        }
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        loginItem?.state = LoginItem.isEnabled ? .on : .off
+    }
+
+    // O menu ainda está sumindo quando a ação chega: espera um instante para ele não sair na foto.
+    @objc private func menuAction(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let action = Action(rawValue: raw) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.perform(action) }
+    }
+
+    @objc private func openSettings() {
+        settings.show()
+    }
+
+    @objc private func toggleLogin() {
+        LoginItem.set(!LoginItem.isEnabled)
+    }
+
+    @objc private func showAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: "Lupa",
+            .credits: NSAttributedString(string: "Zoom, desenho e cronômetro de intervalo para quem apresenta no Mac.\ngithub.com/pauloFroes/lupa"),
+        ])
+    }
+
+    // MARK: - Atalhos
+
+    private func registerHotKeys(_ shortcuts: [Action: Shortcut]) {
+        unregisterHotKeys()
+        for (action, shortcut) in shortcuts {
+            if let id = HotKeyCenter.shared.register(shortcut, handler: { [weak self] in self?.perform(action) }) {
+                hotKeyIDs.append(id)
+            }
+        }
+    }
+
+    private func unregisterHotKeys() {
+        hotKeyIDs.forEach { HotKeyCenter.shared.unregister($0) }
+        hotKeyIDs.removeAll()
+    }
+
+    // No zoom ao vivo a Lupa não tem o teclado: ⌃= e ⌃- valem só enquanto ele está ligado.
+    private func registerLiveHotKeys() {
+        unregisterLiveHotKeys()
+        let control = NSEvent.ModifierFlags.control.rawValue
+        let bindings: [(Int, CGFloat)] = [(kVK_ANSI_Equal, 1.25), (kVK_ANSI_Minus, 0.8)]
+        for (key, factor) in bindings {
+            let shortcut = Shortcut(keyCode: UInt32(key), modifiers: control)
+            if let id = HotKeyCenter.shared.register(shortcut, handler: { [weak self] in self?.live.adjust(by: factor) }) {
+                liveHotKeyIDs.append(id)
+            }
+        }
+    }
+
+    private func unregisterLiveHotKeys() {
+        liveHotKeyIDs.forEach { HotKeyCenter.shared.unregister($0) }
+        liveHotKeyIDs.removeAll()
+    }
+
+    // MARK: - Modos
+
+    func perform(_ action: Action) {
+        switch action {
+        case .zoom:
+            if zoomView != nil { closeOverlay() } else { startOverlay(.zoom) }
+        case .draw:
+            if let view = zoomView {
+                if view.mode == .zoom { view.switchToDraw() } else { closeOverlay() }
+            } else {
+                startOverlay(.draw)
+            }
+        case .breakTimer:
+            if breakView != nil { closeBreak() } else { startBreak() }
+        case .liveZoom:
+            if live.isActive { live.stop() } else { startLive() }
+        }
+    }
+
+    private func startOverlay(_ mode: ZoomDrawView.Mode) {
+        guard !capturing else { return }
+        live.stop()
+        closeBreak()
+        capturing = true
+        let screen = ScreenCapture.screenUnderMouse()
+        rememberFrontApp()
+        Task { @MainActor in
+            defer { self.capturing = false }
+            do {
+                let image = try await ScreenCapture.capture(screen: screen)
+                self.presentOverlay(image: image, screen: screen, mode: mode)
+            } catch {
+                self.showCaptureError(error)
+            }
+        }
+    }
+
+    private func presentOverlay(image: CGImage, screen: NSScreen, mode: ZoomDrawView.Mode) {
+        let window = OverlayWindow(screen: screen)
+        let mouse = NSEvent.mouseLocation
+        let local = CGPoint(x: mouse.x - screen.frame.minX, y: mouse.y - screen.frame.minY)
+        let view = ZoomDrawView(
+            frame: NSRect(origin: .zero, size: screen.frame.size),
+            snapshot: image,
+            mode: mode,
+            initialZoom: prefs.initialZoom,
+            penIndex: prefs.pen,
+            mouse: local
+        )
+        view.onExit = { [weak self] in self?.closeOverlay() }
+        window.contentView = view
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(view)
+        overlayWindow = window
+        zoomView = view
+    }
+
+    private func closeOverlay() {
+        guard let window = overlayWindow else { return }
+        zoomView?.stop()
+        window.orderOut(nil)
+        overlayWindow = nil
+        zoomView = nil
+        restoreFrontApp()
+    }
+
+    private func startBreak() {
+        live.stop()
+        closeOverlay()
+        let screen = ScreenCapture.screenUnderMouse()
+        rememberFrontApp()
+        let window = OverlayWindow(screen: screen)
+        let view = BreakTimerView(frame: NSRect(origin: .zero, size: screen.frame.size), duration: prefs.breakDuration)
+        view.onExit = { [weak self] in self?.closeBreak() }
+        window.contentView = view
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(view)
+        breakWindow = window
+        breakView = view
+    }
+
+    private func closeBreak() {
+        guard let window = breakWindow else { return }
+        breakView?.stop()
+        window.orderOut(nil)
+        breakWindow = nil
+        breakView = nil
+        restoreFrontApp()
+    }
+
+    private func startLive() {
+        guard !capturing else { return }
+        closeOverlay()
+        closeBreak()
+        capturing = true
+        let screen = ScreenCapture.screenUnderMouse()
+        Task { @MainActor in
+            defer { self.capturing = false }
+            do {
+                try await self.live.start(on: screen, zoom: self.prefs.initialZoom)
+                self.registerLiveHotKeys()
+            } catch {
+                self.showCaptureError(error)
+            }
+        }
+    }
+
+    private func rememberFrontApp() {
+        let front = NSWorkspace.shared.frontmostApplication
+        if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            previousApp = front
+        }
+    }
+
+    private func restoreFrontApp() {
+        previousApp?.activate(options: [])
+        previousApp = nil
+    }
+
+    // MARK: - Permissão
+
+    private func requestPermissionOnFirstLaunch() {
+        let key = "didLaunchBefore"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        if !ScreenCapture.hasPermission { CGRequestScreenCaptureAccess() }
+    }
+
+    private func showCaptureError(_ error: Error) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        if ScreenCapture.hasPermission {
+            alert.messageText = "não deu para capturar a tela"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+        alert.messageText = "A Lupa precisa ver a sua tela"
+        alert.informativeText = """
+        Para aproximar e desenhar, a Lupa tira uma foto da tela na hora do atalho. Nada é gravado em disco nem sai do seu Mac.
+
+        Ligue a Lupa em Ajustes do Sistema › Privacidade e Segurança › Gravação de Tela e Áudio do Sistema e abra a Lupa de novo.
+        """
+        alert.addButton(withTitle: "Abrir Ajustes do Sistema")
+        alert.addButton(withTitle: "Agora não")
+        if alert.runModal() == .alertFirstButtonReturn {
+            CGRequestScreenCaptureAccess()
+            ScreenCapture.openPrivacySettings()
+        }
+    }
+}

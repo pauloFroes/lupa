@@ -1,0 +1,519 @@
+import AppKit
+import Carbon.HIToolbox
+
+// Zoom e desenho sobre uma foto congelada da tela. O zoom escala em torno do cursor, então o
+// ponto sob o mouse é sempre o ponto real da tela; ao desenhar, o recorte visível congela.
+final class ZoomDrawView: NSView, NSTextInputClient {
+    enum Mode {
+        case zoom
+        case draw
+    }
+
+    private enum Board {
+        case screen
+        case white
+        case black
+    }
+
+    var onExit: (() -> Void)?
+
+    private let snapshot: NSImage
+    private(set) var mode: Mode
+    private var zoom: CGFloat = 1
+    private var targetZoom: CGFloat
+    private var anchor: CGPoint
+    private var mouse: CGPoint
+    private var frozenSource: CGRect?
+    private var enteredFromZoom = false
+    private var board: Board = .screen
+
+    private var shapes: [Shape] = []
+    private var current: Shape?
+    private var dragStart: CGPoint = .zero
+    private var penIndex: Int
+    private var highlighter = false
+    private var penWidth: CGFloat = 6
+    private var draft: TextDraft?
+    private var markedText = ""
+    private var textSize: CGFloat = 40
+
+    private var exporting = false
+    private var hudUntil = Date.distantPast
+    private var hudFull = true
+    private var toast: String?
+    private var toastUntil = Date.distantPast
+    private var ticker: Timer?
+
+    private static let blankCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
+
+    init(frame: NSRect, snapshot: CGImage, mode: Mode, initialZoom: CGFloat, penIndex: Int, mouse: CGPoint) {
+        self.snapshot = NSImage(cgImage: snapshot, size: frame.size)
+        self.mode = mode
+        targetZoom = mode == .zoom ? initialZoom : 1
+        anchor = mouse
+        self.mouse = mouse
+        self.penIndex = penIndex
+        super.init(frame: frame)
+        if mode == .draw { frozenSource = bounds }
+        showHUD(full: true)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override var acceptsFirstResponder: Bool { true }
+    override var isOpaque: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, ticker == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(timer, forMode: .common)
+        ticker = timer
+        updateCursor()
+    }
+
+    func stop() {
+        ticker?.invalidate()
+        ticker = nil
+        NSCursor.arrow.set()
+    }
+
+    func switchToDraw() {
+        guard mode == .zoom else { return }
+        enterDraw(fromZoom: true)
+    }
+
+    // MARK: - Estado
+
+    private var effectiveWidth: CGFloat { highlighter ? penWidth * 3 : penWidth }
+
+    private func sourceRect() -> CGRect {
+        if let frozenSource { return frozenSource }
+        let scale = max(zoom, 1)
+        return CGRect(
+            x: anchor.x * (1 - 1 / scale),
+            y: anchor.y * (1 - 1 / scale),
+            width: bounds.width / scale,
+            height: bounds.height / scale
+        )
+    }
+
+    private func enterDraw(fromZoom: Bool) {
+        frozenSource = sourceRect()
+        mode = .draw
+        enteredFromZoom = fromZoom
+        updateCursor()
+        showHUD(full: true)
+    }
+
+    private func returnToZoom() {
+        commitText()
+        shapes.removeAll()
+        current = nil
+        board = .screen
+        frozenSource = nil
+        mode = .zoom
+        enteredFromZoom = false
+        anchor = mouse
+        updateCursor()
+        showHUD(full: true)
+    }
+
+    private func updateCursor() {
+        window?.invalidateCursorRects(for: self)
+        (mode == .draw ? Self.blankCursor : NSCursor.arrow).set()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: mode == .draw ? Self.blankCursor : .arrow)
+    }
+
+    private func tick() {
+        var dirty = false
+        if frozenSource == nil, abs(zoom - targetZoom) > 0.001 {
+            zoom += (targetZoom - zoom) * 0.22
+            if abs(zoom - targetZoom) < 0.002 { zoom = targetZoom }
+            dirty = true
+        }
+        let now = Date()
+        if now < hudUntil.addingTimeInterval(0.4) || now < toastUntil.addingTimeInterval(0.4) { dirty = true }
+        if dirty { needsDisplay = true }
+    }
+
+    private func showHUD(full: Bool) {
+        hudFull = full
+        hudUntil = Date().addingTimeInterval(full ? 4 : 1.6)
+        needsDisplay = true
+    }
+
+    private func flash(_ message: String) {
+        toast = message
+        toastUntil = Date().addingTimeInterval(1.8)
+        needsDisplay = true
+    }
+
+    // MARK: - Desenho
+
+    override func draw(_ dirtyRect: NSRect) {
+        switch board {
+        case .screen:
+            NSGraphicsContext.current?.imageInterpolation = .high
+            snapshot.draw(in: bounds, from: sourceRect(), operation: .copy, fraction: 1)
+        case .white:
+            Theme.paper50.setFill()
+            bounds.fill()
+        case .black:
+            Theme.ink900.setFill()
+            bounds.fill()
+        }
+        shapes.forEach { $0.draw() }
+        current?.draw()
+        draft?.draw(marked: markedText, caret: !exporting)
+        guard !exporting else { return }
+        if mode == .draw, draft == nil { drawPenCursor() }
+        drawHUD()
+    }
+
+    private func drawPenCursor() {
+        let pen = Pens.all[penIndex]
+        let diameter = max(effectiveWidth, 6)
+        let path = NSBezierPath(ovalIn: NSRect(
+            x: mouse.x - diameter / 2,
+            y: mouse.y - diameter / 2,
+            width: diameter,
+            height: diameter
+        ))
+        (highlighter ? pen.color.withAlphaComponent(0.45) : pen.color).setFill()
+        path.fill()
+        Theme.paper50.withAlphaComponent(0.9).setStroke()
+        path.lineWidth = 1.5
+        path.stroke()
+    }
+
+    private func drawHUD() {
+        let maxWidth = bounds.width - 32
+        let alpha = HUD.fadeAlpha(until: hudUntil)
+        if alpha > 0 {
+            switch mode {
+            case .zoom:
+                HUD.drawBar(zoomSegments(), style: .primary, centerX: bounds.midX, bottom: 40, maxWidth: maxWidth, alpha: alpha)
+            case .draw:
+                var bottom: CGFloat = 32
+                if hudFull {
+                    bottom += HUD.drawBar(drawHints(), style: .secondary, centerX: bounds.midX, bottom: bottom, maxWidth: maxWidth, alpha: alpha) + 8
+                }
+                HUD.drawBar(drawSegments(), style: .primary, centerX: bounds.midX, bottom: bottom, maxWidth: maxWidth, alpha: alpha)
+            }
+        }
+        let toastAlpha = HUD.fadeAlpha(until: toastUntil)
+        if toastAlpha > 0, let toast {
+            HUD.drawBar([.badge(toast)], style: .primary, centerX: bounds.midX, bottom: bounds.height - 92, maxWidth: maxWidth, alpha: toastAlpha)
+        }
+    }
+
+    private func zoomSegments() -> [HUDSegment] {
+        let label = String(format: "%.1f×", targetZoom).replacingOccurrences(of: ".", with: ",")
+        return [
+            .badge(label),
+            .hint([("rolar", true), (" ou ", false), ("↑↓", true), (" aproxima", false)]),
+            .hint([("clique", true), (" desenha", false)]),
+            HUD.hint("esc", "sai"),
+        ]
+    }
+
+    private func drawSegments() -> [HUDSegment] {
+        let pen = Pens.all[penIndex]
+        let tool = draft != nil ? "texto" : (highlighter ? "marca-texto" : "caneta")
+        return [
+            .swatches(selected: penIndex, highlighter: highlighter),
+            .separator,
+            .penWidth(pen.color, "\(Int(effectiveWidth.rounded())) px"),
+            .separator,
+            .tool(tool),
+        ]
+    }
+
+    private func drawHints() -> [HUDSegment] {
+        var hints: [HUDSegment] = [
+            HUD.hint("⇧", "linha"),
+            HUD.hint("⌃", "retângulo"),
+            HUD.hint("⌥", "elipse"),
+            HUD.hint("⌃⇧", "seta"),
+            HUD.hint("T", "texto"),
+            HUD.hint("⇧+cor", "marca-texto"),
+            HUD.hint("rolar", "espessura"),
+            HUD.hint("E", "apaga"),
+            HUD.hint("W K", "quadro"),
+            HUD.hint("⌘Z", "desfaz"),
+            HUD.hint("⌘C ⌘S", "copia, salva"),
+        ]
+        if enteredFromZoom { hints.append(HUD.hint("clique direito", "volta ao zoom")) }
+        hints.append(HUD.hint("esc", "sai"))
+        return hints
+    }
+
+    // MARK: - Mouse
+
+    private func point(_ event: NSEvent) -> CGPoint {
+        convert(event.locationInWindow, from: nil)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        mouse = point(event)
+        if mode == .zoom { anchor = mouse }
+        needsDisplay = true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let location = point(event)
+        mouse = location
+        if mode == .zoom { enterDraw(fromZoom: true) }
+        commitText()
+        dragStart = location
+        current = Shape(
+            kind: Shape.kind(for: event.modifierFlags),
+            points: [location],
+            color: Pens.all[penIndex].color,
+            width: effectiveWidth,
+            highlighter: highlighter
+        )
+        needsDisplay = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        mouse = point(event)
+        updateCurrentShape(flags: event.modifierFlags)
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        updateCurrentShape(flags: event.modifierFlags)
+    }
+
+    private func updateCurrentShape(flags: NSEvent.ModifierFlags) {
+        guard var shape = current else { return }
+        let kind = Shape.kind(for: flags)
+        if kind == .freehand {
+            if shape.kind != .freehand { shape.points = [dragStart] }
+            shape.points.append(mouse)
+        } else {
+            shape.points = [dragStart, mouse]
+        }
+        shape.kind = kind
+        current = shape
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if let shape = current { shapes.append(shape) }
+        current = nil
+        needsDisplay = true
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        if mode == .draw, enteredFromZoom {
+            returnToZoom()
+        } else {
+            onExit?()
+        }
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let raw = event.scrollingDeltaY
+        guard raw != 0 else { return }
+        let step = event.hasPreciseScrollingDeltas ? raw / 30 : raw
+        switch mode {
+        case .zoom:
+            targetZoom = (targetZoom * pow(1.15, step)).clamped(1, 16)
+            showHUD(full: false)
+        case .draw:
+            if draft != nil {
+                textSize = (textSize + step * 4).clamped(12, 220)
+                draft?.fontSize = textSize
+            } else {
+                penWidth = (penWidth + step * 2).clamped(1, 60)
+                showHUD(full: false)
+            }
+        }
+        needsDisplay = true
+    }
+
+    // MARK: - Teclado
+
+    override func keyDown(with event: NSEvent) {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if draft != nil, !flags.contains(.command) {
+            interpretKeyEvents([event])
+            return
+        }
+        if Int(event.keyCode) == kVK_Escape {
+            onExit?()
+            return
+        }
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        if flags.contains(.command) {
+            handleCommand(key)
+            return
+        }
+        switch mode {
+        case .zoom: handleZoomKey(event)
+        case .draw: handleDrawKey(key, shift: flags.contains(.shift))
+        }
+    }
+
+    private func handleCommand(_ key: String) {
+        switch key {
+        case "z":
+            if draft != nil {
+                draft = nil
+                markedText = ""
+            } else if !shapes.isEmpty {
+                shapes.removeLast()
+            }
+        case "c": copyImage()
+        case "s": saveImage()
+        default: return
+        }
+        needsDisplay = true
+    }
+
+    private func handleZoomKey(_ event: NSEvent) {
+        switch Int(event.keyCode) {
+        case kVK_UpArrow: targetZoom = (targetZoom * 1.25).clamped(1, 16)
+        case kVK_DownArrow: targetZoom = (targetZoom / 1.25).clamped(1, 16)
+        default: return
+        }
+        showHUD(full: false)
+    }
+
+    private func handleDrawKey(_ key: String, shift: Bool) {
+        if let index = Pens.index(forKey: key) {
+            penIndex = index
+            highlighter = shift
+            showHUD(full: false)
+            return
+        }
+        switch key {
+        case "e": shapes.removeAll()
+        case "w": board = board == .white ? .screen : .white
+        case "k": board = board == .black ? .screen : .black
+        case "t": startText()
+        default: return
+        }
+        needsDisplay = true
+    }
+
+    private func startText() {
+        commitText()
+        draft = TextDraft(origin: mouse, text: "", fontSize: textSize, color: Pens.all[penIndex].color)
+        showHUD(full: false)
+    }
+
+    private func commitText() {
+        guard let finished = draft else { return }
+        draft = nil
+        markedText = ""
+        inputContext?.discardMarkedText()
+        if !finished.text.isEmpty { shapes.append(Shape(text: finished)) }
+        needsDisplay = true
+    }
+
+    // MARK: - NSTextInputClient (acentos do teclado ABNT2 passam pelo sistema de entrada)
+
+    func insertText(_ string: Any, replacementRange: NSRange) {
+        let text = (string as? NSAttributedString)?.string ?? (string as? String) ?? ""
+        markedText = ""
+        draft?.text += text
+        needsDisplay = true
+    }
+
+    override func doCommand(by selector: Selector) {
+        switch selector {
+        case #selector(NSResponder.insertNewline(_:)):
+            draft?.text += "\n"
+        case #selector(NSResponder.deleteBackward(_:)):
+            if draft?.text.isEmpty == false { draft?.text.removeLast() }
+        case #selector(NSResponder.cancelOperation(_:)):
+            commitText()
+        default:
+            break
+        }
+        needsDisplay = true
+    }
+
+    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        markedText = (string as? NSAttributedString)?.string ?? (string as? String) ?? ""
+        needsDisplay = true
+    }
+
+    func unmarkText() {
+        markedText = ""
+    }
+
+    func selectedRange() -> NSRange {
+        NSRange(location: draft?.text.utf16.count ?? 0, length: 0)
+    }
+
+    func markedRange() -> NSRange {
+        guard !markedText.isEmpty else { return NSRange(location: NSNotFound, length: 0) }
+        return NSRange(location: draft?.text.utf16.count ?? 0, length: markedText.utf16.count)
+    }
+
+    func hasMarkedText() -> Bool {
+        !markedText.isEmpty
+    }
+
+    func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
+        nil
+    }
+
+    func validAttributesForMarkedText() -> [NSAttributedString.Key] {
+        []
+    }
+
+    func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+        let origin = draft?.origin ?? mouse
+        guard let window else { return .zero }
+        return window.convertToScreen(convert(NSRect(origin: origin, size: .zero), to: nil))
+    }
+
+    func characterIndex(for point: NSPoint) -> Int {
+        NSNotFound
+    }
+
+    // MARK: - Copiar e salvar
+
+    private func renderPNG() -> Data? {
+        exporting = true
+        defer {
+            exporting = false
+            needsDisplay = true
+        }
+        guard let rep = bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+        cacheDisplay(in: bounds, to: rep)
+        return rep.representation(using: .png, properties: [:])
+    }
+
+    private func copyImage() {
+        guard let png = renderPNG() else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setData(png, forType: .png)
+        flash("copiado")
+    }
+
+    private func saveImage() {
+        guard let png = renderPNG() else { return }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd 'às' HH.mm.ss"
+        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+        let url = desktop.appendingPathComponent("Lupa \(formatter.string(from: Date())).png")
+        do {
+            try png.write(to: url)
+            flash("salvo na Mesa")
+        } catch {
+            flash("não deu para salvar")
+        }
+    }
+}

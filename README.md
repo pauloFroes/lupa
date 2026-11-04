@@ -16,7 +16,7 @@ A Lupa fica na barra de menus do Mac, sem ícone no Dock, e entra em ação com 
 | `⌃1` | Zoom | Congela a tela e aproxima em torno do cursor. Role ou use `↑` `↓` para mudar o zoom; mova o mouse para navegar. Clique para desenhar ali mesmo; `esc` sai. |
 | `⌃2` | Desenhar | Desenha sobre a tela congelada (ou sobre o zoom, se você veio do `⌃1`). |
 | `⌃3` | Intervalo | Cronômetro em tela cheia. `↑` `↓` somam ou tiram 1 minuto, `espaço` pausa, `esc` volta à apresentação. |
-| `⌃4` | Zoom ao vivo | Zoom que acompanha o cursor enquanto você usa os apps; o clique vai para o app embaixo. `⌃=` e `⌃-` mudam o zoom. |
+| `⌃4` | Zoom ao vivo | Zoom que acompanha o cursor enquanto você usa os apps; o clique vai para o app embaixo. `⌃=` e `⌃-` mudam o zoom. O cursor fica maior e desliza com movimento suave, inclina ao andar e afunda no clique; tamanho e suavidade mudam em Ajustes. |
 | `⌃5` | Gravar tela | Abre o painel de gravação; com a gravação rodando, o mesmo atalho para. |
 
 ### No desenho
@@ -38,7 +38,7 @@ O painel do `⌃5` escolhe tela inteira ou uma área (arraste para marcar), som 
 - Zoom, desenho e zoom ao vivo entram no vídeo: dá para aproximar e anotar enquanto grava.
 - Ainda não há editor de linha do tempo; para cortar o começo e o fim, abra o arquivo no QuickTime Player (`⌘T`).
 
-Os atalhos mudam em **Ajustes…** (`⌘,` com o menu aberto), junto com o zoom inicial, a cor inicial da caneta e a duração do intervalo.
+Os atalhos mudam em **Ajustes…** (`⌘,` com o menu aberto), junto com o zoom inicial, a cor inicial da caneta, o tamanho e a suavidade do cursor no zoom ao vivo e a duração do intervalo.
 
 > `⌃1` a `⌃5` coincidem com "Ir para a Mesa 1…5" do Controle de Missão quando esses atalhos estão ligados em Ajustes do Sistema › Teclado › Atalhos de Teclado. Se você usa essas mesas, troque os atalhos da Lupa em Ajustes.
 

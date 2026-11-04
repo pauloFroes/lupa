@@ -1,9 +1,11 @@
 import AppKit
+import Combine
 import CoreMedia
 import ScreenCaptureKit
 
 // Zoom ao vivo: um SCStream da tela (sem as janelas da Lupa) desenhado numa janela que não
-// recebe clique. Como a escala é em torno do cursor, o clique cai no ponto real sob o mouse.
+// recebe clique. A escala é em torno do cursor desenhado pela Lupa (LiveCursor), que segue o
+// mouse com uma mola; parado, ele coincide com o mouse e o clique cai no ponto certo.
 final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private(set) var isActive = false
     var onStop: (() -> Void)?
@@ -15,6 +17,9 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private var zoom: CGFloat = 1
     private var targetZoom: CGFloat = 2
     private let contentLayer = CALayer()
+    private var cursor: LiveCursor?
+    private var cursorOnScreen = true
+    private var prefsObserver: AnyCancellable?
     private let queue = DispatchQueue(label: "lupa.live-zoom")
 
     func start(on screen: NSScreen, zoom initialZoom: CGFloat) async throws {
@@ -35,6 +40,9 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         isActive = false
         ticker?.invalidate()
         ticker = nil
+        prefsObserver = nil
+        cursor?.stop()
+        cursor = nil
         if let stream {
             Task { try? await stream.stopCapture() }
         }
@@ -69,6 +77,18 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         border.borderWidth = 4
         view.layer?.addSublayer(border)
 
+        let prefs = Preferences.shared
+        let cursor = LiveCursor(size: prefs.cursorSize, smoothing: prefs.cursorSmoothing)
+        view.layer?.addSublayer(cursor.layer)
+        cursor.start(at: localMouse(in: screen.frame), backingScale: screen.backingScaleFactor)
+        self.cursor = cursor
+        cursorOnScreen = true
+        prefsObserver = prefs.objectWillChange.sink { [weak self] in
+            DispatchQueue.main.async {
+                self?.cursor?.update(size: prefs.cursorSize, smoothing: prefs.cursorSmoothing)
+            }
+        }
+
         let badge = LiveBadgeView(frame: NSRect(x: 24, y: size.height - 24 - 32, width: 104, height: 32))
         view.addSubview(badge)
 
@@ -91,17 +111,35 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         guard let screen else { return }
         zoom += (targetZoom - zoom) * 0.2
         let frame = screen.frame
-        let mouse = NSEvent.mouseLocation
-        let point = CGPoint(
-            x: (mouse.x - frame.minX).clamped(0, frame.width),
-            y: (mouse.y - frame.minY).clamped(0, frame.height)
-        )
+        let raw = localMouse(in: frame)
+        let onScreen = NSMouseInRect(NSEvent.mouseLocation, frame, false)
+        let target = CGPoint(x: raw.x.clamped(0, frame.width), y: raw.y.clamped(0, frame.height))
+        var point = target
+        if let cursor {
+            // Fora desta tela o cursor do sistema volta; ao voltar, o desenhado reaparece no lugar.
+            if onScreen != cursorOnScreen {
+                cursorOnScreen = onScreen
+                if onScreen {
+                    SystemCursor.hide()
+                    cursor.jump(to: target)
+                } else {
+                    SystemCursor.show()
+                }
+            }
+            let smoothed = cursor.step(toward: target, visible: onScreen)
+            point = CGPoint(x: smoothed.x.clamped(0, frame.width), y: smoothed.y.clamped(0, frame.height))
+        }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         contentLayer.anchorPoint = CGPoint(x: point.x / frame.width, y: point.y / frame.height)
         contentLayer.position = point
         contentLayer.transform = CATransform3DMakeScale(zoom, zoom, 1)
         CATransaction.commit()
+    }
+
+    private func localMouse(in frame: CGRect) -> CGPoint {
+        let mouse = NSEvent.mouseLocation
+        return CGPoint(x: mouse.x - frame.minX, y: mouse.y - frame.minY)
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {

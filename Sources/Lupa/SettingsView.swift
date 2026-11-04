@@ -135,6 +135,14 @@ struct SettingsView: View {
                         .padding(.leading, 6)
                 }
             }
+            HStack(alignment: .top, spacing: 24) {
+                section("CURSOR NO ZOOM AO VIVO") {
+                    Segmented(options: Preferences.cursorSizeLabels, selection: $prefs.cursorSizeIndex)
+                }
+                section("SUAVIDADE DO CURSOR") {
+                    Segmented(options: Preferences.cursorSmoothingLabels, selection: $prefs.cursorSmoothingIndex)
+                }
+            }
             section("INTERVALO PADRÃO") {
                 Segmented(options: Preferences.breakMinutes.map { "\($0) min" }, selection: $prefs.breakIndex)
             }

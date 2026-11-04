@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         live.onStop = { [weak self] in self?.unregisterLiveHotKeys() }
         recording.shortcutLabel = { [weak self] in self?.prefs.shortcuts[.record]?.displayString ?? "" }
         recording.onChange = { [weak self] in self?.updateRecordingState() }
-        requestPermissionOnFirstLaunch()
+        requestPermissionIfNeeded()
     }
 
     // MARK: - Barra de menus
@@ -327,10 +327,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Permissão
 
-    private func requestPermissionOnFirstLaunch() {
-        let key = "didLaunchBefore"
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
-        UserDefaults.standard.set(true, forKey: key)
+    // O macOS só mostra o pedido uma vez por autorização; depois de zerada (assinatura nova),
+    // pedir de novo na abertura recoloca a Lupa na lista em vez de esperar o primeiro atalho.
+    private func requestPermissionIfNeeded() {
         if !ScreenCapture.hasPermission { CGRequestScreenCaptureAccess() }
     }
 
@@ -349,6 +348,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Para aproximar e desenhar, a Lupa tira uma foto da tela na hora do atalho. Nada é gravado em disco nem sai do seu Mac.
 
         Ligue a Lupa em Ajustes do Sistema › Privacidade e Segurança › Gravação de Tela e Áudio do Sistema e abra a Lupa de novo.
+
+        Se ela já aparece ligada, a autorização é de uma versão anterior: selecione a Lupa na lista, clique em − e abra a Lupa de novo.
         """
         alert.addButton(withTitle: "Abrir Ajustes do Sistema")
         alert.addButton(withTitle: "Agora não")

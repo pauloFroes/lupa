@@ -64,13 +64,15 @@ Na primeira vez, o macOS pede três permissões em Ajustes do Sistema › Privac
 
 Depois de permitir a Gravação de Tela, abra a Lupa de novo.
 
-A assinatura é ad-hoc (sem certificado de desenvolvedor), e o macOS amarra a permissão à assinatura. Por isso **cada nova compilação volta a pedir a permissão**. Se ela ficar presa, zere e permita de novo:
+O macOS amarra a permissão à assinatura do app. Para ela sobreviver às recompilações, o script cria na primeira vez um certificado autoassinado, **Lupa Local Signing**, no seu chaveiro de início de sessão (`scripts/make-signing-cert.sh`), e assina sempre com ele. Assim você só permite uma vez.
+
+Quando a assinatura muda (por exemplo, na primeira instalação com o certificado), o `--install` zera a permissão antiga e avisa; basta permitir de novo. Se a Lupa aparecer ligada em Ajustes e ainda assim pedir permissão, a autorização é de uma versão anterior: remova a Lupa da lista com `−` e abra a Lupa de novo, ou rode:
 
 ```bash
 tccutil reset ScreenCapture io.github.paulofroes.lupa
 ```
 
-Com um certificado próprio, exporte `LUPA_SIGN_IDENTITY="Apple Development: …"` antes do script, e a permissão sobrevive às compilações.
+Com um certificado da Apple, exporte `LUPA_SIGN_IDENTITY="Apple Development: …"` antes do script; `LUPA_SIGN_IDENTITY=-` volta à assinatura ad-hoc.
 
 ## Por dentro
 

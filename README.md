@@ -22,11 +22,12 @@ A Lupa fica na barra de menus do Mac, sem ícone no Dock, e entra em ação com 
 ### No desenho
 
 - **Cores:** `R` vermelho, `G` verde, `B` azul, `O` laranja, `Y` amarelo, `P` rosa. Com `⇧`, a cor vira marca-texto.
-- **Formas, segurando a tecla enquanto arrasta:** `⇧` linha, `⌃` (ou `⌘`) retângulo, `⌥` elipse, `⌃⇧` seta.
+- **Formas, segurando a tecla enquanto arrasta:** `⇧` linha, `⌃` (ou `⌘`) retângulo, `⌥` elipse, `⌃⇧` seta. Pode soltar a tecla antes do mouse: a forma fica. O rótulo da barra mostra a forma da tecla segurada antes de você arrastar.
 - **Texto:** `T` escreve onde está o cursor (acentos funcionam); `esc` termina o texto.
 - **Espessura:** role o mouse (no texto, muda o tamanho da letra).
 - **Quadro:** `W` branco, `K` preto, `E` apaga tudo, `⌘Z` desfaz.
 - **Guardar:** `⌘C` copia a imagem; `⌘S` salva um PNG na Mesa.
+- **Comandos:** ao entrar no desenho, a Lupa mostra os comandos por tipo de elemento (formas, texto e cor, quadro). Eles somem no primeiro traço; `H` mostra e esconde.
 - Clique direito volta do desenho para o zoom; `esc` sai de tudo.
 
 ### Na gravação

@@ -7,6 +7,7 @@ enum HUDSegment {
     case swatches(selected: Int, highlighter: Bool)
     case separator
     case penWidth(NSColor, String)
+    case group(String)
 }
 
 enum HUDStyle {
@@ -112,6 +113,14 @@ enum HUD {
         ])
     }
 
+    private static func groupString(_ text: String, size: CGFloat) -> NSAttributedString {
+        NSAttributedString(string: text.uppercased(), attributes: [
+            .font: Theme.mono(size - 1, .semibold),
+            .foregroundColor: Theme.lime,
+            .kern: 1.2,
+        ])
+    }
+
     private static func labelString(_ text: String) -> NSAttributedString {
         NSAttributedString(string: text, attributes: [
             .font: Theme.mono(13, .medium),
@@ -127,6 +136,7 @@ enum HUD {
         case .swatches: CGFloat(Pens.all.count) * 32 + CGFloat(Pens.all.count - 1) * 6
         case .separator: 1
         case let .penWidth(_, label): 14 + 8 + ceil(labelString(label).size().width)
+        case let .group(text): ceil(groupString(text, size: m.fontSize).size().width)
         }
     }
 
@@ -149,6 +159,9 @@ enum HUD {
             NSBezierPath(ovalIn: NSRect(x: x, y: midY - 7, width: 14, height: 14)).fill()
             let string = labelString(label)
             string.draw(at: CGPoint(x: x + 22, y: midY - string.size().height / 2))
+        case let .group(text):
+            let string = groupString(text, size: m.fontSize)
+            string.draw(at: CGPoint(x: x, y: midY - string.size().height / 2))
         }
     }
 

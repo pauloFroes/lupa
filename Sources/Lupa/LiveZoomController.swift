@@ -199,7 +199,6 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func setGestureNote(_ note: String?) {
         hud?.note = note
-        hud?.needsDisplay = true
     }
 
     func reset() {
@@ -218,13 +217,27 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         contentLayer.contentsGravity = .resize
         contentLayer.magnificationFilter = .linear
         contentLayer.minificationFilter = .linear
+        contentLayer.isOpaque = true
         view.layer?.addSublayer(contentLayer)
 
+        // Quatro filetes em vez de uma camada do tamanho da tela: o WindowServer mistura cada
+        // camada transparente a cada quadro, e isso pesa em tela Retina.
         let border = CALayer()
         border.frame = view.bounds
-        border.borderColor = Theme.lime.cgColor
-        border.borderWidth = 4
+        border.allowsGroupOpacity = false
         border.opacity = 0
+        let thickness: CGFloat = 4
+        for strip in [
+            CGRect(x: 0, y: 0, width: size.width, height: thickness),
+            CGRect(x: 0, y: size.height - thickness, width: size.width, height: thickness),
+            CGRect(x: 0, y: 0, width: thickness, height: size.height),
+            CGRect(x: size.width - thickness, y: 0, width: thickness, height: size.height),
+        ] {
+            let edge = CALayer()
+            edge.frame = strip
+            edge.backgroundColor = Theme.lime.cgColor
+            border.addSublayer(edge)
+        }
         view.layer?.addSublayer(border)
         self.border = border
 
@@ -275,6 +288,10 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
                 self?.cursor?.update(size: prefs.cursorSize, smoothing: prefs.cursorSmoothing)
             }
         }
+        // Com a imagem cobrindo a tela, a janela opaca poupa o WindowServer de compor o que está
+        // atrás a cada quadro; era o que dava os trancos. Antes do primeiro quadro ela é transparente.
+        window?.backgroundColor = .black
+        window?.isOpaque = true
         hud?.show(zoom: targetZoom)
         phase = .entering
         phaseStart = CACurrentMediaTime()
@@ -439,23 +456,53 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
 private final class LiveHUDView: NSView {
     private var zoom: CGFloat = 2
     private var hintsUntil = Date.distantPast
-    var note: String?
+    var note: String? {
+        didSet { bar.needsDisplay = true }
+    }
+    // Duas áreas pequenas: uma camada transparente do tamanho da tela custaria a cada quadro.
+    private let badge = HUDPart()
+    private let bar = HUDPart()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        badge.frame = NSRect(x: 0, y: frame.height - 100, width: 360, height: 100)
+        bar.frame = NSRect(x: 0, y: 0, width: frame.width, height: 170)
+        badge.onDraw = { [weak self] bounds in self?.drawBadge(in: bounds) }
+        bar.onDraw = { [weak self] bounds in self?.drawHints(in: bounds) }
+        addSubview(badge)
+        addSubview(bar)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) não usado") }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     func show(zoom: CGFloat) {
         self.zoom = zoom
         hintsUntil = Date().addingTimeInterval(3)
-        needsDisplay = true
+        bar.isHidden = false
+        badge.needsDisplay = true
+        bar.needsDisplay = true
     }
 
     func tick() {
-        if Date() < hintsUntil.addingTimeInterval(0.4) { needsDisplay = true }
+        guard !bar.isHidden else { return }
+        if Date() < hintsUntil.addingTimeInterval(0.4) {
+            bar.needsDisplay = true
+        } else {
+            bar.isHidden = true
+        }
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        let level = String(format: "%.1f×", zoom).replacingOccurrences(of: ".", with: ",")
+    private var level: String {
+        String(format: "%.1f×", zoom).replacingOccurrences(of: ".", with: ",")
+    }
+
+    private func drawBadge(in bounds: NSRect) {
         HUD.drawBadgeRow(label: "AO VIVO", value: level, origin: CGPoint(x: 24, y: bounds.height - 24 - 36))
+    }
+
+    private func drawHints(in bounds: NSRect) {
         HUD.drawBar(
             [
                 .badge(level),
@@ -481,5 +528,15 @@ private final class LiveHUDView: NSView {
                 alpha: HUD.fadeAlpha(until: hintsUntil)
             )
         }
+    }
+}
+
+private final class HUDPart: NSView {
+    var onDraw: ((NSRect) -> Void)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        onDraw?(bounds)
     }
 }

@@ -71,9 +71,14 @@ final class ShortcutRecorder: ObservableObject {
     }
 }
 
-private enum Palette {
+enum Palette {
     static let ink = Color(nsColor: Theme.ink900)
     static let inkDeep = Color(nsColor: Theme.ink1000)
+    static let inkRaised = Color(nsColor: Theme.ink800)
+    static let inkBorder = Color(nsColor: Theme.ink700)
+    static let onInkMuted = Color(nsColor: Theme.ink300)
+    static let onInkText = Color(nsColor: Theme.ink200)
+    static let olive = Color(nsColor: Theme.olive)
     static let muted = Color(nsColor: Theme.ink500)
     static let border = Color(nsColor: Theme.ink100)
     static let borderStrong = Color(nsColor: Theme.ink200)
@@ -87,7 +92,7 @@ private enum Palette {
     static let dangerSoft = Color(nsColor: Theme.dangerSoft)
 }
 
-private extension Font {
+extension Font {
     static func lupaText(_ size: CGFloat, _ weight: NSFont.Weight = .regular) -> Font {
         Font(Theme.text(size, weight) as CTFont)
     }
@@ -220,9 +225,10 @@ struct SettingsView: View {
     }
 }
 
-private struct Segmented: View {
+struct Segmented: View {
     let options: [String]
     @Binding var selection: Int
+    var onInk = false
 
     var body: some View {
         HStack(spacing: 4) {
@@ -233,13 +239,13 @@ private struct Segmented: View {
                 } label: {
                     Text(options[index])
                         .font(.lupaText(13, .semibold))
-                        .foregroundColor(active ? Palette.ink : Palette.muted)
+                        .foregroundColor(labelColor(active))
                         .padding(.horizontal, 14)
                         .frame(height: 34)
                         .background(
                             RoundedRectangle(cornerRadius: 9)
-                                .fill(active ? Palette.surface : .clear)
-                                .shadow(color: active ? Palette.ink.opacity(0.08) : .clear, radius: 1, y: 1)
+                                .fill(active ? (onInk ? Palette.lime : Palette.surface) : .clear)
+                                .shadow(color: active && !onInk ? Palette.ink.opacity(0.08) : .clear, radius: 1, y: 1)
                         )
                         .contentShape(Rectangle())
                 }
@@ -247,7 +253,12 @@ private struct Segmented: View {
             }
         }
         .padding(4)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Palette.sunken))
+        .background(RoundedRectangle(cornerRadius: 12).fill(onInk ? Palette.inkRaised : Palette.sunken))
+    }
+
+    private func labelColor(_ active: Bool) -> Color {
+        if onInk { return active ? Palette.inkDeep : Palette.onInkMuted }
+        return active ? Palette.ink : Palette.muted
     }
 }
 
@@ -274,7 +285,7 @@ private struct OutlineButtonStyle: ButtonStyle {
     }
 }
 
-private struct LimeToggle: View {
+struct LimeToggle: View {
     let isOn: Bool
     let action: () -> Void
 

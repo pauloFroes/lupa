@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>pt-BR</string>
+	<key>CFBundleDisplayName</key>
+	<string>Lupa</string>
+	<key>CFBundleExecutable</key>
+	<string>Lupa</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.paulofroes.lupa</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Lupa</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.2.0</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>ATSApplicationFontsPath</key>
+	<string>Fonts</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>A Lupa grava a sua voz junto com a tela quando o microfone está ligado no painel de gravação.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A Lupa mostra a sua câmera numa bolha sobre a tela durante a gravação, quando você liga essa opção.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>MIT · github.com/pauloFroes/lupa</string>
+</dict>
+</plist>

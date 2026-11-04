@@ -13,6 +13,7 @@ final class Preferences: ObservableObject {
         static let zoom = "initialZoomIndex"
         static let pen = "penIndex"
         static let breakLength = "breakIndex"
+        static let recording = "recordingOptions"
     }
 
     private let defaults = UserDefaults.standard
@@ -33,6 +34,12 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(breakIndex, forKey: Keys.breakLength) }
     }
 
+    @Published var recording: RecordingOptions {
+        didSet {
+            if let data = try? JSONEncoder().encode(recording) { defaults.set(data, forKey: Keys.recording) }
+        }
+    }
+
     var initialZoom: CGFloat {
         Self.zoomLevels[zoomIndex.clamped(0, Self.zoomLevels.count - 1)]
     }
@@ -48,6 +55,8 @@ final class Preferences: ObservableObject {
         penIndex = defaults.object(forKey: Keys.pen) as? Int ?? 0
         breakIndex = defaults.object(forKey: Keys.breakLength) as? Int ?? 1
         shortcuts = Self.loadShortcuts(from: defaults)
+        recording = defaults.data(forKey: Keys.recording)
+            .flatMap { try? JSONDecoder().decode(RecordingOptions.self, from: $0) } ?? RecordingOptions()
     }
 
     private static func loadShortcuts(from defaults: UserDefaults) -> [Action: Shortcut] {

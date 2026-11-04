@@ -6,6 +6,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let prefs = Preferences.shared
     private let settings = SettingsWindowController()
     private let live = LiveZoomController()
+    private let recording = RecordingController()
+    private var pauseItem: NSMenuItem?
+    private var recordingTicker: Timer?
 
     private var statusItem: NSStatusItem?
     private var actionItems: [Action: NSMenuItem] = [:]
@@ -38,6 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             registerHotKeys(prefs.shortcuts)
         }
         live.onStop = { [weak self] in self?.unregisterLiveHotKeys() }
+        recording.shortcutLabel = { [weak self] in self?.prefs.shortcuts[.record]?.displayString ?? "" }
+        recording.onChange = { [weak self] in self?.updateRecordingState() }
         requestPermissionOnFirstLaunch()
     }
 
@@ -58,6 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(entry)
             actionItems[action] = entry
         }
+        let pause = menuItem("Pausar gravação", #selector(togglePause))
+        pause.isHidden = true
+        menu.addItem(pause)
+        pauseItem = pause
         menu.addItem(.separator())
         menu.addItem(menuItem("Ajustes…", #selector(openSettings), key: ","))
         let login = menuItem("Abrir ao iniciar sessão", #selector(toggleLogin))
@@ -92,6 +101,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         loginItem?.state = LoginItem.isEnabled ? .on : .off
+    }
+
+    @objc private func togglePause() {
+        recording.togglePause()
+    }
+
+    // Gravando, o ícone vira um ponto vermelho com o tempo corrido, e o item do menu vira "Parar".
+    private func updateRecordingState() {
+        let state = recording.state
+        let active = state == .recording || state == .paused
+        actionItems[.record]?.title = active ? "Parar gravação" : Action.record.title
+        pauseItem?.isHidden = !active
+        pauseItem?.title = state == .paused ? "Retomar gravação" : "Pausar gravação"
+        recordingTicker?.invalidate()
+        recordingTicker = nil
+        if active {
+            let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.refreshStatusButton() }
+            RunLoop.main.add(timer, forMode: .common)
+            recordingTicker = timer
+        }
+        refreshStatusButton()
+    }
+
+    private func refreshStatusButton() {
+        guard let item = statusItem, let button = item.button else { return }
+        let state = recording.state
+        guard state == .recording || state == .paused else {
+            item.length = NSStatusItem.squareLength
+            button.title = ""
+            let image = NSImage(systemSymbolName: "plus.magnifyingglass", accessibilityDescription: "Lupa")
+            image?.isTemplate = true
+            button.image = image
+            return
+        }
+        item.length = NSStatusItem.variableLength
+        let symbol = state == .paused ? "pause.circle.fill" : "record.circle.fill"
+        let config = NSImage.SymbolConfiguration(paletteColors: [state == .paused ? Theme.ink300 : Theme.danger])
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Gravando")?.withSymbolConfiguration(config)
+        button.imagePosition = .imageLeading
+        button.attributedTitle = NSAttributedString(
+            string: " " + RecordingController.format(recording.elapsed),
+            attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)]
+        )
     }
 
     // O menu ainda está sumindo quando a ação chega: espera um instante para ele não sair na foto.
@@ -166,6 +218,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if breakView != nil { closeBreak() } else { startBreak() }
         case .liveZoom:
             if live.isActive { live.stop() } else { startLive() }
+        case .record:
+            recording.toggle()
         }
     }
 

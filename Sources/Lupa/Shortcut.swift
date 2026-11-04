@@ -6,6 +6,7 @@ enum Action: String, CaseIterable, Identifiable, Codable {
     case draw
     case breakTimer
     case liveZoom
+    case record
 
     var id: String { rawValue }
 
@@ -15,6 +16,7 @@ enum Action: String, CaseIterable, Identifiable, Codable {
         case .draw: "Desenhar"
         case .breakTimer: "Intervalo"
         case .liveZoom: "Zoom ao vivo"
+        case .record: "Gravar tela"
         }
     }
 
@@ -24,6 +26,7 @@ enum Action: String, CaseIterable, Identifiable, Codable {
         case .draw: kVK_ANSI_2
         case .breakTimer: kVK_ANSI_3
         case .liveZoom: kVK_ANSI_4
+        case .record: kVK_ANSI_5
         }
         return Shortcut(keyCode: UInt32(key), modifiers: NSEvent.ModifierFlags.control.rawValue)
     }

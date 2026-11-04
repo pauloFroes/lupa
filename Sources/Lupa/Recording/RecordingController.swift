@@ -21,6 +21,12 @@ final class RecordingController {
     }
 
     var onChange: (() -> Void)?
+    // Tela gravada, para o Ao vivo abrir nela.
+    private(set) var screen: NSScreen?
+    var isRecording: Bool { state == .recording || state == .paused }
+    var liveZoomActive = false {
+        didSet { recorder?.setLiveCursor(liveZoomActive) }
+    }
     var shortcutLabel: () -> String = { "" }
 
     private let prefs = Preferences.shared
@@ -245,6 +251,8 @@ final class RecordingController {
         Task { @MainActor in
             do {
                 try await recorder.start(screen: screen, area: area, options: options)
+                recorder.setLiveCursor(self.liveZoomActive)
+                self.screen = screen
                 self.startedAt = Date()
                 self.pausedAt = nil
                 self.pausedTotal = 0

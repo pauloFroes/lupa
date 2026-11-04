@@ -43,7 +43,16 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     static let fadeDuration = 0.3
     private let queue = DispatchQueue(label: "lupa.live-zoom")
 
-    func start(on screen: NSScreen, zoom initialZoom: CGFloat) async throws {
+    // Gravação: o Ao vivo começa em 1×, aproxima no ponto do clique e volta a 1× quando o mouse
+    // fica parado, como nos vídeos editados. Sem borda nem selo, que entrariam no vídeo.
+    private(set) var autoZoom = false
+    private var autoZoomLevel: CGFloat = 2
+    private var clickMonitors: [Any] = []
+    private var lastActivity: CFTimeInterval = 0
+    private var lastMouse = CGPoint.zero
+    static let autoZoomIdle: CFTimeInterval = 2.5
+
+    func start(on screen: NSScreen, zoom initialZoom: CGFloat, autoZoom: Bool = false) async throws {
         // A janela vazia entra na tela antes do filtro, então a Lupa com certeza está na lista
         // de apps que o filtro exclui.
         let window = await MainActor.run { () -> OverlayWindow in
@@ -63,7 +72,10 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
             try await stream.startCapture()
             await MainActor.run {
-                self.present(in: window, on: screen, stream: stream, zoom: initialZoom)
+                self.autoZoom = autoZoom
+                self.autoZoomLevel = initialZoom.clamped(Self.zoomRange.lowerBound, Self.zoomRange.upperBound)
+                self.present(in: window, on: screen, stream: stream, zoom: autoZoom ? 1 : initialZoom)
+                if autoZoom { self.startClickMonitors() }
             }
         } catch {
             await MainActor.run { window.orderOut(nil) }
@@ -86,6 +98,8 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         isActive = false
         phase = .waitingForFrame
+        stopClickMonitors()
+        autoZoom = false
         border = nil
         displayLink?.invalidate()
         displayLink = nil
@@ -114,6 +128,73 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         logZoom.target = log(Double(targetZoom))
         NSLog("Lupa zoom ao vivo: fator %.3f, zoom %.2f", factor, targetZoom)
         hud?.show(zoom: targetZoom)
+    }
+
+    // Liga ou desliga o zoom automático com o Ao vivo já aberto (a gravação começou ou terminou).
+    func setAutoZoom(_ on: Bool, level: CGFloat) {
+        guard isActive, on != autoZoom else { return }
+        autoZoom = on
+        autoZoomLevel = level.clamped(Self.zoomRange.lowerBound, Self.zoomRange.upperBound)
+        if on {
+            initialZoom = 1
+            lastActivity = CACurrentMediaTime()
+            lastMouse = NSEvent.mouseLocation
+            startClickMonitors()
+        } else {
+            initialZoom = autoZoomLevel
+            stopClickMonitors()
+        }
+        if phase == .live { setChrome(opacity: 1) }
+    }
+
+    private func startClickMonitors() {
+        stopClickMonitors()
+        lastActivity = CACurrentMediaTime()
+        lastMouse = NSEvent.mouseLocation
+        // O clique passa pela janela do zoom e vai para os apps; o monitor global o enxerga.
+        // O local cobre os cliques nas janelas da própria Lupa.
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] _ in
+            self?.handleClick()
+        }) {
+            clickMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] event in
+            self?.handleClick()
+            return event
+        }) {
+            clickMonitors.append(local)
+        }
+    }
+
+    private func stopClickMonitors() {
+        clickMonitors.forEach { NSEvent.removeMonitor($0) }
+        clickMonitors.removeAll()
+    }
+
+    // O clique aproxima em torno do cursor: o ponto clicado fica sob ele e a câmera o centraliza.
+    private func handleClick() {
+        guard isActive, autoZoom, phase == .live, let screen,
+              NSMouseInRect(NSEvent.mouseLocation, screen.frame, false) else { return }
+        lastActivity = CACurrentMediaTime()
+        guard targetZoom < autoZoomLevel else { return }
+        targetZoom = autoZoomLevel
+        logZoom.target = log(Double(targetZoom))
+        NSLog("Lupa gravação: clique, zoom %.2f", targetZoom)
+    }
+
+    // Mouse parado por `autoZoomIdle` segundos: volta a 1×.
+    private func updateAutoZoom() {
+        let now = CACurrentMediaTime()
+        let mouse = NSEvent.mouseLocation
+        if hypot(mouse.x - lastMouse.x, mouse.y - lastMouse.y) > 1 {
+            lastMouse = mouse
+            lastActivity = now
+        }
+        if targetZoom > 1, now - lastActivity > Self.autoZoomIdle {
+            targetZoom = 1
+            logZoom.target = 0
+            NSLog("Lupa gravação: mouse parado, volta a 1×")
+        }
     }
 
     func setGestureNote(_ note: String?) {
@@ -245,6 +326,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
             setChrome(opacity: min(1, elapsed / Self.fadeDuration))
             if progress >= 1 { phase = .live }
         case .live:
+            if autoZoom { updateAutoZoom() }
             let previousZoom = exp(logZoom.value)
             logZoom.step(dt)
             let zoom = exp(logZoom.value)
@@ -275,6 +357,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     private func setChrome(opacity: Double) {
+        let opacity = autoZoom ? 0 : opacity
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         border?.opacity = Float(opacity)

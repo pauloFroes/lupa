@@ -58,6 +58,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var systemAudioInput: AVAssetWriterInput?
     private var microphoneInput: AVAssetWriterInput?
     private var fillTimer: DispatchSourceTimer?
+    private var configuration: SCStreamConfiguration?
+    private var showsClicks = false
 
     private var frameDuration = CMTime(value: 1, timescale: 60)
     private var sessionStarted = false
@@ -93,7 +95,18 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         try await stream.startCapture()
         self.stream = stream
+        self.configuration = configuration
+        showsClicks = options.showClicks
         startFillTimer()
+    }
+
+    // No Ao vivo a Lupa desenha o próprio cursor, ampliado e no lugar certo da imagem; o do sistema
+    // e o círculo do clique cairiam no ponto real, fora do zoom.
+    func setLiveCursor(_ live: Bool) {
+        guard let stream, let configuration else { return }
+        configuration.showsCursor = !live
+        configuration.showMouseClicks = !live && showsClicks
+        Task { try? await stream.updateConfiguration(configuration) }
     }
 
     func pause() {

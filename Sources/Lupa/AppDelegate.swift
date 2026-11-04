@@ -24,6 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var hotKeyIDs: [UInt32] = []
     private var liveHotKeyIDs: [UInt32] = []
     private let liveInput = LiveZoomInput()
+    // Gravando, a tela fica no Ao vivo com zoom automático no clique.
+    private var recordingActive = false
+    private var liveStartedByRecording = false
     private var cancellables = Set<AnyCancellable>()
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -45,7 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             registerHotKeys(prefs.shortcuts)
         }
-        live.onStop = { [weak self] in self?.unregisterLiveHotKeys() }
+        live.onStop = { [weak self] in
+            self?.unregisterLiveHotKeys()
+            self?.recording.liveZoomActive = false
+        }
         recording.shortcutLabel = { [weak self] in self?.prefs.shortcuts[.record]?.displayString ?? "" }
         recording.onChange = { [weak self] in self?.updateRecordingState() }
         requestPermissionIfNeeded()
@@ -127,6 +133,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             recordingTicker = timer
         }
         refreshStatusButton()
+        syncLiveWithRecording()
+    }
+
+    private func syncLiveWithRecording() {
+        let active = recording.isRecording
+        guard active != recordingActive else { return }
+        recordingActive = active
+        if active {
+            if live.isActive {
+                live.setAutoZoom(true, level: prefs.initialZoom)
+                registerLiveHotKeys()
+                recording.liveZoomActive = true
+            } else {
+                liveStartedByRecording = true
+                startLive()
+            }
+        } else {
+            if liveStartedByRecording {
+                live.stop(animated: true)
+            } else if live.isActive {
+                live.setAutoZoom(false, level: prefs.initialZoom)
+                registerLiveHotKeys()
+            }
+            liveStartedByRecording = false
+        }
+    }
+
+    // Zoom, desenho ou intervalo fecham o Ao vivo; ao sair deles, a gravação volta a ele.
+    private func resumeLiveForRecording() {
+        guard recordingActive, !live.isActive else { return }
+        liveStartedByRecording = true
+        startLive()
     }
 
     private func refreshStatusButton() {
@@ -196,15 +234,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let control = NSEvent.ModifierFlags.control.rawValue
         let controlShift = control | NSEvent.ModifierFlags.shift.rawValue
         // ⌃⇧= também, porque no teclado o "+" é ⇧= e é nele que a mão vai para aproximar.
-        let bindings: [(Int, UInt, () -> Void)] = [
+        var bindings: [(Int, UInt, () -> Void)] = [
             (kVK_ANSI_Equal, control, { [weak self] in self?.live.adjust(by: 1.25) }),
             (kVK_ANSI_Equal, controlShift, { [weak self] in self?.live.adjust(by: 1.25) }),
             (kVK_ANSI_KeypadPlus, control, { [weak self] in self?.live.adjust(by: 1.25) }),
             (kVK_ANSI_Minus, control, { [weak self] in self?.live.adjust(by: 0.8) }),
             (kVK_ANSI_KeypadMinus, control, { [weak self] in self?.live.adjust(by: 0.8) }),
             (kVK_ANSI_0, control, { [weak self] in self?.live.reset() }),
-            (kVK_Escape, 0, { [weak self] in self?.live.stop(animated: true) }),
         ]
+        // Na gravação o esc fica com os apps (é comum usá-lo no que se grava); sai-se pelo atalho do Ao vivo.
+        if !live.autoZoom {
+            bindings.append((kVK_Escape, 0, { [weak self] in self?.live.stop(animated: true) }))
+        }
         // O log (Console, processo Lupa) diz se o atalho registrou e se disparou: é o que separa
         // "o macOS não entrega a tecla" de "o zoom recebeu e não mudou".
         for (key, modifiers, handler) in bindings {
@@ -287,7 +328,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             penIndex: prefs.pen,
             mouse: local
         )
-        view.onExit = { [weak self] in self?.closeOverlay() }
+        view.onExit = { [weak self] in
+            self?.closeOverlay()
+            self?.resumeLiveForRecording()
+        }
         window.contentView = view
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
@@ -312,7 +356,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rememberFrontApp()
         let window = OverlayWindow(screen: screen)
         let view = BreakTimerView(frame: NSRect(origin: .zero, size: screen.frame.size), duration: prefs.breakDuration)
-        view.onExit = { [weak self] in self?.closeBreak() }
+        view.onExit = { [weak self] in
+            self?.closeBreak()
+            self?.resumeLiveForRecording()
+        }
         window.contentView = view
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
@@ -335,12 +382,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         closeOverlay()
         closeBreak()
         capturing = true
-        let screen = ScreenCapture.screenUnderMouse()
+        let auto = recording.isRecording
+        let screen = auto ? (recording.screen ?? ScreenCapture.screenUnderMouse()) : ScreenCapture.screenUnderMouse()
         Task { @MainActor in
             defer { self.capturing = false }
             do {
-                try await self.live.start(on: screen, zoom: self.prefs.initialZoom)
+                try await self.live.start(on: screen, zoom: self.prefs.initialZoom, autoZoom: auto)
                 self.registerLiveHotKeys()
+                self.recording.liveZoomActive = auto
             } catch {
                 self.showCaptureError(error)
             }

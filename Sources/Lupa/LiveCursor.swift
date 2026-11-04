@@ -3,7 +3,8 @@ import QuartzCore
 
 // Cursor do zoom ao vivo, no estilo dos vídeos editados: o cursor do sistema some e a Lupa
 // desenha um maior, que segue o mouse com física de mola, inclina com a velocidade e afunda
-// no clique. O zoom usa a mesma posição suavizada como âncora, então a câmera também desliza.
+// no clique. `position` fica em coordenadas da tela real: a câmera do zoom parte dela e devolve,
+// em `place`, onde o cursor aparece na imagem ampliada.
 final class LiveCursor {
     struct Smoothing {
         let stiffness: CGFloat
@@ -17,9 +18,11 @@ final class LiveCursor {
     private var scale: CGFloat = 1
     private var scaleVelocity: CGFloat = 0
     private var pressed = false
+    private var isVisible = true
     private var lastTime: CFTimeInterval = 0
     private var cursorKey: String = ""
     private var lastCursorCheck: CFTimeInterval = 0
+    private var lastHideCheck: CFTimeInterval = 0
     private var size: CGFloat
     private var smoothing: Smoothing
     private var backingScale: CGFloat = 2
@@ -38,7 +41,8 @@ final class LiveCursor {
         layer.contentsScale = backingScale
         position = point
         velocity = .zero
-        scale = 1
+        // Nasce do tamanho do cursor do sistema, para a troca não dar um pulo.
+        scale = 1 / size
         scaleVelocity = 0
         pressed = false
         lastTime = CACurrentMediaTime()
@@ -99,6 +103,17 @@ final class LiveCursor {
             refreshImage(force: false)
         }
 
+        if visible, now - lastHideCheck > 0.25 {
+            lastHideCheck = now
+            SystemCursor.enforce()
+        }
+
+        isVisible = visible
+        return position
+    }
+
+    // Desenha o cursor em `point`, nas coordenadas da view.
+    func place(at point: CGPoint) {
         // Inclina para trás no sentido do movimento, como se a ponta puxasse o cursor.
         let tilt = (-velocity.dx / 6000).clamped(-0.28, 0.28)
         var transform = CATransform3DMakeRotation(tilt, 0, 0, 1)
@@ -106,11 +121,10 @@ final class LiveCursor {
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        layer.isHidden = !visible
-        layer.position = position
+        layer.isHidden = !isVisible
+        layer.position = point
         layer.transform = transform
         CATransaction.commit()
-        return position
     }
 
     func update(size: CGFloat, smoothing: Smoothing) {
@@ -167,33 +181,66 @@ final class LiveCursor {
 
 // Esconder o cursor do sistema com a Lupa em segundo plano exige ligar a propriedade
 // "SetsCursorInBackground" da conexão com o WindowServer (API privada, carregada em tempo de execução).
+// O app em primeiro plano pode trazer o cursor de volta, por isso `enforce` reaplica; cada hide
+// conta e precisa de um show correspondente, ou o cursor não volta.
 enum SystemCursor {
     private typealias DefaultConnection = @convention(c) () -> Int32
     private typealias SetProperty = @convention(c) (Int32, Int32, CFString, CFTypeRef) -> Int32
+    private typealias IsVisible = @convention(c) () -> Int32
+    private typealias CursorCall = @convention(c) (Int32) -> Int32
 
-    private static var hidden = false
+    private static let defaultHandle = UnsafeMutableRawPointer(bitPattern: -2)
+    private static var wanted = false
+    private static var displayHides = 0
+    private static var connectionHides = 0
 
-    private static let enableBackground: Void = {
+    private static let connection: Int32? = {
         _ = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
-        guard
-            let connectionSymbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "_CGSDefaultConnection"),
-            let propertySymbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGSSetConnectionProperty")
-        else { return }
-        let connection = unsafeBitCast(connectionSymbol, to: DefaultConnection.self)()
-        let setProperty = unsafeBitCast(propertySymbol, to: SetProperty.self)
-        _ = setProperty(connection, connection, "SetsCursorInBackground" as CFString, kCFBooleanTrue)
+        guard let symbol = dlsym(defaultHandle, "_CGSDefaultConnection") else { return nil }
+        return unsafeBitCast(symbol, to: DefaultConnection.self)()
     }()
 
-    static func hide() {
-        guard !hidden else { return }
-        _ = enableBackground
+    private static func call(_ name: String) -> Bool {
+        guard let connection, let symbol = dlsym(defaultHandle, name) else { return false }
+        return unsafeBitCast(symbol, to: CursorCall.self)(connection) == 0
+    }
+
+    private static var isVisible: Bool {
+        guard connection != nil, let symbol = dlsym(defaultHandle, "CGCursorIsVisible") else { return false }
+        return unsafeBitCast(symbol, to: IsVisible.self)() != 0
+    }
+
+    private static func allowBackgroundCursorControl() {
+        guard let connection, let symbol = dlsym(defaultHandle, "CGSSetConnectionProperty") else { return }
+        let setProperty = unsafeBitCast(symbol, to: SetProperty.self)
+        _ = setProperty(connection, connection, "SetsCursorInBackground" as CFString, kCFBooleanTrue)
+    }
+
+    private static func apply() {
+        allowBackgroundCursorControl()
         CGDisplayHideCursor(CGMainDisplayID())
-        hidden = true
+        displayHides += 1
+        if isVisible, call("CGSHideCursor") { connectionHides += 1 }
+        NSLog("Lupa cursor: escondido, visível=%d, hides=%d+%d", isVisible ? 1 : 0, displayHides, connectionHides)
+    }
+
+    static func hide() {
+        guard !wanted else { return }
+        wanted = true
+        apply()
+    }
+
+    static func enforce() {
+        if wanted, isVisible { apply() }
     }
 
     static func show() {
-        guard hidden else { return }
-        CGDisplayShowCursor(CGMainDisplayID())
-        hidden = false
+        guard wanted else { return }
+        wanted = false
+        for _ in 0 ..< displayHides { CGDisplayShowCursor(CGMainDisplayID()) }
+        for _ in 0 ..< connectionHides { _ = call("CGSShowCursor") }
+        NSLog("Lupa cursor: devolvido, hides=%d+%d", displayHides, connectionHides)
+        displayHides = 0
+        connectionHides = 0
     }
 }

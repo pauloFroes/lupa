@@ -38,6 +38,13 @@ struct Spring {
         }
     }
 
+    // Segue um valor calculado por fora, guardando a velocidade para a mola continuar sem tranco.
+    mutating func drive(to newValue: Double, dt: Double) {
+        velocity = dt > 0 ? (newValue - value) / dt : 0
+        value = newValue
+        target = newValue
+    }
+
     mutating func snap(to newValue: Double) {
         value = newValue
         target = newValue

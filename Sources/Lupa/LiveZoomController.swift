@@ -4,10 +4,12 @@ import CoreMedia
 import ScreenCaptureKit
 
 // Zoom ao vivo: um SCStream da tela (sem as janelas da Lupa) desenhado numa janela que não
-// recebe clique. A escala é em torno do cursor desenhado pela Lupa (LiveCursor), que segue o
-// mouse com uma mola: em movimento fica um instante atrás (a fluidez do Screen Studio) e, parado,
-// coincide com o mouse, então o clique cai no ponto real. Cursor e foco são o mesmo ponto; com
-// molas separadas o cursor sairia de cima do conteúdo ampliado.
+// recebe clique. A câmera fica parada enquanto o cursor (LiveCursor, que segue o mouse com uma
+// mola) anda pelo miolo da imagem; perto da beirada ele a empurra, até ela encostar na borda da
+// tela. Encostada, ela para e só o cursor anda. O cursor é desenhado onde o ponto real do mouse
+// aparece na imagem ampliada, então, parado, o clique cai exatamente no que está sob ele.
+// A entrada espera o primeiro quadro, para começar em 1× idêntica à tela, e a saída faz o caminho
+// inverso pela mesma curva.
 final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private(set) var isActive = false
     var onStop: (() -> Void)?
@@ -17,9 +19,16 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private var screen: NSScreen?
     private var displayLink: CADisplayLink?
     private var lastTimestamp: CFTimeInterval?
-    private var closing = false
+    private enum Phase { case waitingForFrame, entering, live, leaving }
+    private var phase = Phase.waitingForFrame
+    private var phaseStart: CFTimeInterval = 0
+    private var leavingLogZoom = 0.0
+    private var leavingDisplay = CGPoint.zero
+    private var border: CALayer?
     // O zoom anda em escala logarítmica: 2× → 4× leva o mesmo tempo que 4× → 8×, como o olho espera.
     private var logZoom = Spring(value: 0, response: 0.42)
+    private var cameraX = Spring(value: 0, response: 0.22)
+    private var cameraY = Spring(value: 0, response: 0.22)
     private var cursor: LiveCursor?
     private var cursorOnScreen = true
     private var prefsObserver: AnyCancellable?
@@ -27,13 +36,18 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private var initialZoom: CGFloat = 2
     private var hud: LiveHUDView?
     private let contentLayer = CALayer()
-    static let zoomRange: ClosedRange<CGFloat> = 1.25 ... 8
+    static let zoomRange: ClosedRange<CGFloat> = 1 ... 8
+    // Fração do trecho visível, em cada lado, em que o cursor empurra a câmera.
+    static let pushMargin = 0.2
+    static let transitionDuration = 0.7
+    static let fadeDuration = 0.3
     private let queue = DispatchQueue(label: "lupa.live-zoom")
 
     func start(on screen: NSScreen, zoom initialZoom: CGFloat) async throws {
         // A janela vazia entra na tela antes do filtro, então a Lupa com certeza está na lista
         // de apps que o filtro exclui.
         let window = await MainActor.run { () -> OverlayWindow in
+            contentLayer.contents = nil
             let window = OverlayWindow(screen: screen)
             window.ignoresMouseEvents = true
             window.orderFrontRegardless()
@@ -60,14 +74,19 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     // Animado, o zoom volta a 1× pela mola antes de fechar, como a câmera saindo do zoom.
     func stop(animated: Bool = false) {
         guard isActive else { return }
-        if animated, displayLink != nil {
-            guard !closing else { return }
-            closing = true
-            logZoom.target = 0
+        if animated, phase == .leaving { return }
+        if animated, phase != .waitingForFrame, let screen {
+            let point = cursor?.position ?? cursorPoint(in: screen.frame)
+            let zoom = exp(logZoom.value)
+            leavingDisplay = CGPoint(x: (point.x - cameraX.value) * zoom, y: (point.y - cameraY.value) * zoom)
+            leavingLogZoom = logZoom.value
+            phase = .leaving
+            phaseStart = CACurrentMediaTime()
             return
         }
         isActive = false
-        closing = false
+        phase = .waitingForFrame
+        border = nil
         displayLink?.invalidate()
         displayLink = nil
         lastTimestamp = nil
@@ -87,8 +106,11 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func adjust(by factor: CGFloat) {
-        guard isActive, !closing else { return }
-        targetZoom = (targetZoom * factor).clamped(Self.zoomRange.lowerBound, Self.zoomRange.upperBound)
+        guard isActive, phase == .live else { return }
+        var next = targetZoom * factor
+        // Só ao diminuir: a pinça sobe em passos pequenos e ficaria presa em 1× se isto valesse na subida.
+        if factor < 1, next < 1.1 { next = 1 }
+        targetZoom = next.clamped(Self.zoomRange.lowerBound, Self.zoomRange.upperBound)
         logZoom.target = log(Double(targetZoom))
         NSLog("Lupa zoom ao vivo: fator %.3f, zoom %.2f", factor, targetZoom)
         hud?.show(zoom: targetZoom)
@@ -100,7 +122,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func reset() {
-        guard isActive, !closing else { return }
+        guard isActive, phase == .live else { return }
         targetZoom = initialZoom
         logZoom.target = log(Double(targetZoom))
         hud?.show(zoom: targetZoom)
@@ -121,21 +143,12 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         border.frame = view.bounds
         border.borderColor = Theme.lime.cgColor
         border.borderWidth = 4
+        border.opacity = 0
         view.layer?.addSublayer(border)
-
-        let prefs = Preferences.shared
-        let cursor = LiveCursor(size: prefs.cursorSize, smoothing: prefs.cursorSmoothing)
-        view.layer?.addSublayer(cursor.layer)
-        cursor.start(at: cursorPoint(in: screen.frame), backingScale: screen.backingScaleFactor)
-        self.cursor = cursor
-        cursorOnScreen = true
-        prefsObserver = prefs.objectWillChange.sink { [weak self] in
-            DispatchQueue.main.async {
-                self?.cursor?.update(size: prefs.cursorSize, smoothing: prefs.cursorSmoothing)
-            }
-        }
+        self.border = border
 
         let hud = LiveHUDView(frame: view.bounds)
+        hud.alphaValue = 0
         view.addSubview(hud)
         self.hud = hud
 
@@ -146,10 +159,11 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         self.screen = screen
         self.initialZoom = initialZoom.clamped(Self.zoomRange.lowerBound, Self.zoomRange.upperBound)
         targetZoom = self.initialZoom
-        closing = false
+        phase = .waitingForFrame
         isActive = true
-        hud.show(zoom: targetZoom)
 
+        cameraX.snap(to: 0)
+        cameraY.snap(to: 0)
         logZoom.snap(to: 0)
         logZoom.target = log(Double(targetZoom))
         applyTransform(in: screen.frame)
@@ -162,6 +176,27 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         link.add(to: .main, forMode: .common)
         displayLink = link
         lastTimestamp = nil
+
+        // O primeiro quadro pode ter chegado antes daqui.
+        if contentLayer.contents != nil { beginEntry() }
+    }
+
+    private func beginEntry() {
+        guard let screen, let view = window?.contentView else { return }
+        let prefs = Preferences.shared
+        let cursor = LiveCursor(size: prefs.cursorSize, smoothing: prefs.cursorSmoothing)
+        view.layer?.addSublayer(cursor.layer)
+        cursor.start(at: cursorPoint(in: screen.frame), backingScale: screen.backingScaleFactor)
+        self.cursor = cursor
+        cursorOnScreen = true
+        prefsObserver = prefs.objectWillChange.sink { [weak self] in
+            DispatchQueue.main.async {
+                self?.cursor?.update(size: prefs.cursorSize, smoothing: prefs.cursorSmoothing)
+            }
+        }
+        hud?.show(zoom: targetZoom)
+        phase = .entering
+        phaseStart = CACurrentMediaTime()
     }
 
     private func cursorPoint(in frame: CGRect) -> CGPoint {
@@ -178,6 +213,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         let dt = lastTimestamp.map { now - $0 } ?? (1.0 / 60)
         lastTimestamp = now
         hud?.tick()
+        guard phase != .waitingForFrame else { return }
 
         let target = cursorPoint(in: screen.frame)
         let onScreen = NSMouseInRect(NSEvent.mouseLocation, screen.frame, false)
@@ -191,29 +227,105 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
                 SystemCursor.show()
             }
         }
-        cursor?.step(toward: target, visible: onScreen)
-        logZoom.step(dt)
-        applyTransform(in: screen.frame)
+        let point = cursor?.step(toward: target, visible: onScreen) ?? target
+        let elapsed = max(0, now - phaseStart)
+        let progress = min(1, elapsed / Self.transitionDuration)
+        let eased = Self.easeInOut(progress)
+        let frame = screen.frame
 
-        if closing, logZoom.value < 0.01 { stop() }
+        switch phase {
+        case .waitingForFrame:
+            return
+        case .entering:
+            logZoom.snap(to: log(Double(targetZoom)) * eased)
+            anchorCamera(cursor: point, display: point, frame: frame, dt: dt)
+            setChrome(opacity: min(1, elapsed / Self.fadeDuration))
+            if progress >= 1 { phase = .live }
+        case .live:
+            let previousZoom = exp(logZoom.value)
+            logZoom.step(dt)
+            let zoom = exp(logZoom.value)
+            Self.move(&cameraX, cursor: Double(point.x), length: Double(frame.width), from: previousZoom, to: zoom, dt: dt)
+            Self.move(&cameraY, cursor: Double(point.y), length: Double(frame.height), from: previousZoom, to: zoom, dt: dt)
+        case .leaving:
+            logZoom.snap(to: leavingLogZoom * (1 - eased))
+            // O cursor volta do ponto em que aparece na imagem ampliada para o ponto real.
+            let display = CGPoint(
+                x: leavingDisplay.x + (point.x - leavingDisplay.x) * eased,
+                y: leavingDisplay.y + (point.y - leavingDisplay.y) * eased
+            )
+            anchorCamera(cursor: point, display: display, frame: frame, dt: dt)
+            setChrome(opacity: max(0, 1 - elapsed / Self.fadeDuration))
+        }
+        applyTransform(in: frame)
+
+        if phase == .leaving, progress >= 1 { stop() }
+    }
+
+    // Nas transições a câmera sai direto da regra: o cursor aparece em `display` no zoom atual.
+    private func anchorCamera(cursor: CGPoint, display: CGPoint, frame: CGRect, dt: Double) {
+        let zoom = exp(logZoom.value)
+        let limitX = frame.width - frame.width / zoom
+        let limitY = frame.height - frame.height / zoom
+        cameraX.drive(to: (cursor.x - display.x / zoom).clamped(0, limitX), dt: dt)
+        cameraY.drive(to: (cursor.y - display.y / zoom).clamped(0, limitY), dt: dt)
+    }
+
+    private func setChrome(opacity: Double) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        border?.opacity = Float(opacity)
+        CATransaction.commit()
+        hud?.alphaValue = opacity
+    }
+
+    private static func easeInOut(_ t: Double) -> Double {
+        t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2
     }
 
     private func applyTransform(in frame: CGRect) {
         let zoom = CGFloat(exp(logZoom.value))
         let position = cursor?.position ?? cursorPoint(in: frame)
-        let focus = CGPoint(x: position.x.clamped(0, frame.width), y: position.y.clamped(0, frame.height))
+        let point = CGPoint(x: position.x.clamped(0, frame.width), y: position.y.clamped(0, frame.height))
+        let origin = CGPoint(x: cameraX.value, y: cameraY.value)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        contentLayer.anchorPoint = CGPoint(x: focus.x / frame.width, y: focus.y / frame.height)
-        contentLayer.position = focus
+        contentLayer.anchorPoint = .zero
+        contentLayer.position = CGPoint(x: -origin.x * zoom, y: -origin.y * zoom)
         contentLayer.transform = CATransform3DMakeScale(zoom, zoom, 1)
         CATransaction.commit()
+        // Com a câmera atrasada na mola, o ponto real pode cair um instante fora do trecho visível.
+        cursor?.place(at: CGPoint(
+            x: ((point.x - origin.x) * zoom).clamped(0, frame.width),
+            y: ((point.y - origin.y) * zoom).clamped(0, frame.height)
+        ))
+    }
+
+    // Um eixo da câmera; o valor é o início do trecho visível, em pontos da tela real.
+    private static func move(_ camera: inout Spring, cursor: Double, length: Double, from previousZoom: Double, to zoom: Double, dt: Double) {
+        let visible = length / zoom
+        let limit = length - visible
+        // Ao mudar o zoom, o cursor fica onde está na tela e a imagem cresce em torno dele.
+        let ratio = previousZoom / zoom
+        camera.value = (cursor - (cursor - camera.value) * ratio).clamped(0, limit)
+        var target = (cursor - (cursor - camera.target) * ratio).clamped(0, limit)
+        let margin = pushMargin * visible
+        if cursor < target + margin {
+            target = cursor - margin
+        } else if cursor > target + visible - margin {
+            target = cursor - visible + margin
+        }
+        camera.target = target.clamped(0, limit)
+        camera.step(dt)
+        camera.value = camera.value.clamped(0, limit)
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen, let surface = Self.surface(from: sampleBuffer) else { return }
         DispatchQueue.main.async { [weak self] in
-            self?.contentLayer.contents = surface
+            guard let self else { return }
+            self.contentLayer.contents = surface
+            if self.isActive, self.phase == .waitingForFrame { self.beginEntry() }
         }
     }
 

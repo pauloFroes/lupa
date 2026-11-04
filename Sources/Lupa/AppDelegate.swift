@@ -26,6 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let liveInput = LiveZoomInput()
     private var cancellables = Set<AnyCancellable>()
 
+    func applicationWillTerminate(_ notification: Notification) {
+        SystemCursor.show()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         registerHotKeys(prefs.shortcuts)

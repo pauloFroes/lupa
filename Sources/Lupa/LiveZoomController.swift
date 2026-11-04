@@ -4,9 +4,9 @@ import CoreMedia
 import ScreenCaptureKit
 
 // Zoom ao vivo: um SCStream da tela (sem as janelas da Lupa) desenhado numa janela que não
-// recebe clique. A câmera fica parada enquanto o cursor (LiveCursor, que segue o mouse com uma
-// mola) anda pelo miolo da imagem; perto da beirada ele a empurra, até ela encostar na borda da
-// tela. Encostada, ela para e só o cursor anda. O cursor é desenhado onde o ponto real do mouse
+// recebe clique. A câmera acompanha o cursor (LiveCursor, que segue o mouse com uma mola) a todo
+// momento e chega à borda da tela antes dele. Encostada, ela para e só o cursor anda até a
+// borda. O cursor é desenhado onde o ponto real do mouse
 // aparece na imagem ampliada, então, parado, o clique cai exatamente no que está sob ele.
 // A entrada espera o primeiro quadro, para começar em 1× idêntica à tela, e a saída faz o caminho
 // inverso pela mesma curva.
@@ -37,8 +37,9 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private var hud: LiveHUDView?
     private let contentLayer = CALayer()
     static let zoomRange: ClosedRange<CGFloat> = 1 ... 8
-    // Fração do trecho visível, em cada lado, em que o cursor empurra a câmera.
-    static let pushMargin = 0.2
+    // Quanto a câmera se adianta rumo à borda: 0 só mostra a borda com o mouse nela; 1 mantém o
+    // cursor no centro até a câmera encostar. Abaixo de 1 para o zoom 1× não dividir por 0.
+    static let edgeReach = 0.85
     static let transitionDuration = 0.7
     static let fadeDuration = 0.3
     private let queue = DispatchQueue(label: "lupa.live-zoom")
@@ -238,7 +239,10 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
             return
         case .entering:
             logZoom.snap(to: log(Double(targetZoom)) * eased)
-            anchorCamera(cursor: point, display: point, frame: frame, dt: dt)
+            // Pela mesma regra do modo ao vivo, para a entrada terminar sem um segundo movimento.
+            let zoom = exp(logZoom.value)
+            cameraX.drive(to: Self.cameraTarget(cursor: Double(point.x), length: Double(frame.width), zoom: zoom), dt: dt)
+            cameraY.drive(to: Self.cameraTarget(cursor: Double(point.y), length: Double(frame.height), zoom: zoom), dt: dt)
             setChrome(opacity: min(1, elapsed / Self.fadeDuration))
             if progress >= 1 { phase = .live }
         case .live:
@@ -308,16 +312,18 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         // Ao mudar o zoom, o cursor fica onde está na tela e a imagem cresce em torno dele.
         let ratio = previousZoom / zoom
         camera.value = (cursor - (cursor - camera.value) * ratio).clamped(0, limit)
-        var target = (cursor - (cursor - camera.target) * ratio).clamped(0, limit)
-        let margin = pushMargin * visible
-        if cursor < target + margin {
-            target = cursor - margin
-        } else if cursor > target + visible - margin {
-            target = cursor - visible + margin
-        }
-        camera.target = target.clamped(0, limit)
+        camera.target = cameraTarget(cursor: cursor, length: length, zoom: zoom)
         camera.step(dt)
         camera.value = camera.value.clamped(0, limit)
+    }
+
+    // Início do trecho visível para o cursor num eixo. Dentro de `margin` da borda a câmera já
+    // encostou; entre as margens ela percorre todo o resto, sempre com o cursor no trecho.
+    private static func cameraTarget(cursor: Double, length: Double, zoom: Double) -> Double {
+        let visible = length / zoom
+        let margin = edgeReach * visible / 2
+        let progress = ((cursor - margin) / (length - 2 * margin)).clamped(0, 1)
+        return progress * (length - visible)
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {

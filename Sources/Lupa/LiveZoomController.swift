@@ -154,8 +154,10 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         // O clique passa pela janela do zoom e vai para os apps; o monitor global o enxerga.
         // Cliques nas janelas da própria Lupa (barra de gravação, bolha) não dão zoom.
         if let global = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] event in
-            // ⌃+clique não aproxima: é o jeito de clicar sem disparar o zoom automático.
-            if event.modifierFlags.contains(.control) || NSEvent.modifierFlags.contains(.control) { return }
+            // fn+clique não aproxima: é o jeito de clicar sem disparar o zoom automático.
+            // (⌃+clique abriria o menu de contexto no macOS.)
+            if event.modifierFlags.contains(.function) || NSEvent.modifierFlags.contains(.function)
+                || CGEventSource.flagsState(.combinedSessionState).contains(.maskSecondaryFn) { return }
             self?.handleClick()
         }) {
             clickMonitors.append(global)

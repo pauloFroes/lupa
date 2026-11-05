@@ -79,6 +79,14 @@ struct RecordPanelView: View {
                 toggleRow("Câmera em bolha", "Desvia do mouse e volta sozinha. Segure ⌥ para arrastar.", isOn: $prefs.recording.camera)
                 divider
                 toggleRow("Mostrar cliques", "Um anel marca cada clique no vídeo.", isOn: $prefs.recording.showClicks)
+                divider
+                toggleRow(
+                    "Legenda ao vivo",
+                    OpenAIKey.isSet
+                        ? "Sua fala em texto na tela, em \(CaptionLanguage.named(prefs.captions.language).lowercased()); salva um .srt."
+                        : "Cadastre a chave da OpenAI em Ajustes para ligar.",
+                    isOn: $prefs.captions.onLive
+                )
             }
             .padding(.horizontal, 14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Palette.inkRaised))

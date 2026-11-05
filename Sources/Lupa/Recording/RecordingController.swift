@@ -26,6 +26,10 @@ final class RecordingController {
     var onChange: (() -> Void)?
     // Tela gravada, para o Ao vivo abrir nela.
     private(set) var screen: NSScreen?
+    // Área gravada, em pontos da tela (nil = tela inteira): a legenda fica dentro dela.
+    private(set) var area: CGRect?
+    var onStarted: (() -> Void)?
+    var onFinished: ((URL, TimeInterval) -> Void)?
     var isRecording: Bool { state == .recording || state == .paused }
     var liveZoomActive = false {
         didSet { recorder?.setLiveCursor(liveZoomActive) }
@@ -273,10 +277,12 @@ final class RecordingController {
                 try await recorder.start(screen: screen, area: area, options: options, excluding: excluded)
                 recorder.setLiveCursor(self.liveZoomActive)
                 self.screen = screen
+                self.area = area
                 self.startedAt = Date()
                 self.pausedAt = nil
                 self.pausedTotal = 0
                 self.state = .recording
+                self.onStarted?()
             } catch {
                 self.fail(error)
             }
@@ -294,6 +300,7 @@ final class RecordingController {
                 self.camera.hide()
                 self.resetClock()
                 self.state = .idle
+                self.onFinished?(url, duration)
                 self.showDonePanel(url: url, duration: duration)
             } catch {
                 self.fail(error)

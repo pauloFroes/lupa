@@ -146,6 +146,7 @@ struct SettingsView: View {
             section("INTERVALO PADRÃO") {
                 Segmented(options: Preferences.breakMinutes.map { "\($0) min" }, selection: $prefs.breakIndex)
             }
+            CaptionSettings(prefs: prefs)
             Rectangle().fill(Palette.border).frame(height: 1)
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -356,5 +357,135 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         recorder.cancel()
+    }
+}
+
+// Legenda e transcrição: a chave da OpenAI (no chaveiro), o idioma, o tamanho e quando ligar.
+struct CaptionSettings: View {
+    @ObservedObject var prefs: Preferences
+    @State private var keyField = ""
+    @State private var savedKey = OpenAIKey.masked
+    @State private var status: KeyStatus = .idle
+
+    enum KeyStatus: Equatable {
+        case idle, checking, valid, invalid(String)
+    }
+
+    private var sizeIndex: Binding<Int> {
+        Binding(
+            get: { CaptionOptions.Size.allCases.firstIndex(of: prefs.captions.size) ?? 1 },
+            set: { prefs.captions.size = CaptionOptions.Size.allCases[$0] }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("LEGENDA E TRANSCRIÇÃO AO VIVO")
+                .font(.lupaMono(11, .medium))
+                .tracking(1.3)
+                .foregroundColor(Palette.muted)
+            HStack(spacing: 10) {
+                SecureField(savedKey.map { "chave salva: \($0)" } ?? "Cole a chave da OpenAI (sk-…)", text: $keyField)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.lupaMono(12))
+                    .onSubmit(saveKey)
+                Button("Salvar", action: saveKey)
+                    .disabled(keyField.trimmingCharacters(in: .whitespaces).isEmpty)
+                if savedKey != nil {
+                    Button("Remover") {
+                        OpenAIKey.save("")
+                        savedKey = nil
+                        status = .idle
+                    }
+                }
+            }
+            keyStatus
+            HStack(alignment: .top, spacing: 24) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Idioma da fala").font(.lupaText(12, .semibold)).foregroundColor(Palette.muted)
+                    Picker("", selection: $prefs.captions.language) {
+                        ForEach(CaptionLanguage.all) { Text($0.name).tag($0.code) }
+                    }
+                    .labelsHidden()
+                    .frame(width: 210)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Tamanho da legenda").font(.lupaText(12, .semibold)).foregroundColor(Palette.muted)
+                    Segmented(options: CaptionOptions.Size.allCases.map(\.label), selection: sizeIndex)
+                }
+            }
+            HStack(spacing: 10) {
+                Text("Termos").font(.lupaText(12, .semibold)).foregroundColor(Palette.muted)
+                TextField("nomes e siglas que a transcrição deve acertar, separados por vírgula", text: $prefs.captions.vocabulary)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.lupaText(12))
+            }
+            toggleRow("Ligar ao entrar no Ao vivo", "Vale também para a gravação. A qualquer momento, \(prefs.shortcuts[.captions]?.displayString ?? "o atalho") liga e desliga.", isOn: prefs.captions.onLive) {
+                prefs.captions.onLive.toggle()
+            }
+            toggleRow("Salvar a transcrição", "Texto em Filmes › Lupa › Transcrições e, na gravação, legenda .srt ao lado do vídeo.", isOn: prefs.captions.saveTranscript) {
+                prefs.captions.saveTranscript.toggle()
+            }
+        }
+    }
+
+    @ViewBuilder private var keyStatus: some View {
+        switch status {
+        case .idle:
+            Text(savedKey == nil
+                ? "A chave fica no chaveiro do Mac. A transcrição é cobrada na sua conta da OpenAI."
+                : "Chave guardada no chaveiro do Mac.")
+                .font(.lupaText(12)).foregroundColor(Palette.muted)
+        case .checking:
+            Text("conferindo a chave…").font(.lupaText(12)).foregroundColor(Palette.muted)
+        case .valid:
+            Text("chave salva e aceita pela OpenAI").font(.lupaText(12, .semibold)).foregroundColor(Palette.success)
+        case let .invalid(reason):
+            Text(reason).font(.lupaText(12, .semibold)).foregroundColor(Palette.danger)
+        }
+    }
+
+    private func toggleRow(_ title: String, _ detail: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.lupaText(14, .semibold))
+                Text(detail).font(.lupaText(12)).foregroundColor(Palette.muted)
+            }
+            Spacer()
+            LimeToggle(isOn: isOn, action: action)
+        }
+    }
+
+    private func saveKey() {
+        let key = keyField.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        guard OpenAIKey.save(key) else {
+            status = .invalid("não consegui guardar a chave no chaveiro")
+            return
+        }
+        keyField = ""
+        savedKey = OpenAIKey.masked
+        status = .checking
+        Task { @MainActor in
+            status = await Self.check(key)
+        }
+    }
+
+    // Uma chamada barata (lista de modelos) só para saber se a chave é aceita.
+    private static func check(_ key: String) async -> KeyStatus {
+        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/models")!)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            switch code {
+            case 200: return .valid
+            case 401: return .invalid("a OpenAI recusou esta chave")
+            default: return .invalid("a OpenAI respondeu \(code); a chave foi salva mesmo assim")
+            }
+        } catch {
+            return .invalid("sem conexão para conferir; a chave foi salva")
+        }
     }
 }

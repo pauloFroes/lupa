@@ -128,7 +128,7 @@ final class CameraBubble {
         // Arrasto: a janela se move sozinha; ao soltar, o novo lugar vira o lugar da bolha.
         let pressed = NSEvent.pressedMouseButtons & 1 != 0
         if pressed {
-            if !isDragging, panel.frame.contains(mouse) { isDragging = true }
+            if !isDragging, !panel.ignoresMouseEvents, panel.frame.contains(mouse) { isDragging = true }
             if isDragging { return }
         } else if isDragging {
             isDragging = false
@@ -157,6 +157,10 @@ final class CameraBubble {
         } else {
             decide(mouse: mouse, away: away, now: now)
         }
+
+        // Enquanto desliza, o clique passa para o app embaixo, e ela não é agarrada no meio do caminho.
+        let moving = !(springX.isSettled && springY.isSettled)
+        if panel.ignoresMouseEvents != moving { panel.ignoresMouseEvents = moving }
 
         let target = isAway ? away : home
         springX.target = target.x
@@ -212,8 +216,9 @@ final class CameraBubble {
     private func wantsSpot(mouse: CGPoint, bubbleAt origin: CGPoint) -> Bool {
         let d = distance(from: mouse, toBubbleAt: origin)
         if d > Self.approachDistance { return false }
-        if d <= 0 { return true }
         let speed = hypot(mouseVelocity.dx, mouseVelocity.dy)
+        // Cruzando a bolha depressa é passagem, não intenção.
+        if d <= 0 { return speed < 600 }
         if speed < 60 { return d < Self.restDistance }
         let radius = Self.diameter / 2
         let center = CGPoint(x: origin.x + radius, y: origin.y + radius)

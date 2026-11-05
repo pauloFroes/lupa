@@ -17,7 +17,10 @@ final class RecordingController {
     }
 
     private(set) var state: State = .idle {
-        didSet { onChange?() }
+        didSet {
+            updateControlBar()
+            onChange?()
+        }
     }
 
     var onChange: (() -> Void)?
@@ -32,6 +35,8 @@ final class RecordingController {
     private let prefs = Preferences.shared
     private let camera = CameraBubble()
     private var recorder: ScreenRecorder?
+    private let controlBar = RecordingControlBar()
+    private var controlTimer: Timer?
     private var panel: NSPanel?
     private var donePanel: NSPanel?
     private var selectorWindow: OverlayWindow?
@@ -248,9 +253,18 @@ final class RecordingController {
         recorder.onFailure = { [weak self] error in self?.fail(error) }
         self.recorder = recorder
         let options = prefs.recording
+        controlBar.show(
+            on: screen,
+            shortcut: shortcutLabel(),
+            onPause: { [weak self] in self?.togglePause() },
+            onStop: { [weak self] in self?.stop() }
+        )
+        let excluded = controlBar.windowID.map { [$0] } ?? []
         Task { @MainActor in
             do {
-                try await recorder.start(screen: screen, area: area, options: options)
+                // Um respiro para o macOS listar a barra antes do filtro que a exclui.
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                try await recorder.start(screen: screen, area: area, options: options, excluding: excluded)
                 recorder.setLiveCursor(self.liveZoomActive)
                 self.screen = screen
                 self.startedAt = Date()
@@ -297,6 +311,26 @@ final class RecordingController {
         }
     }
 
+    private func updateControlBar() {
+        controlTimer?.invalidate()
+        controlTimer = nil
+        switch state {
+        case .recording, .paused:
+            controlBar.model.paused = state == .paused
+            controlBar.model.time = Self.format(elapsed)
+            let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                self.controlBar.model.time = Self.format(self.elapsed)
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            controlTimer = timer
+        case .idle:
+            controlBar.hide()
+        case .preparing:
+            if recorder == nil { controlBar.hide() }
+        }
+    }
+
     private func resetClock() {
         startedAt = nil
         pausedAt = nil
@@ -330,7 +364,7 @@ final class RecordingController {
         panel.setFrameOrigin(CGPoint(x: screen.maxX - panel.frame.width - 24, y: screen.maxY - panel.frame.height - 16))
         panel.orderFrontRegardless()
         donePanel = panel
-        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self, weak panel] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self, weak panel] in
             if let panel, self?.donePanel === panel { self?.closeDonePanel() }
         }
     }

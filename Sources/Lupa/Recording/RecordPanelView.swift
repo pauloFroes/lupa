@@ -193,6 +193,9 @@ struct RecordingDoneView: View {
                 .foregroundColor(Palette.onInkMuted)
                 .accessibilityLabel("Fechar")
             }
+            Text("salvo em Filmes › Lupa")
+                .font(.lupaText(13))
+                .foregroundColor(Palette.onInkMuted)
             Text(fileName)
                 .font(.lupaMono(12))
                 .foregroundColor(Palette.onInkText)

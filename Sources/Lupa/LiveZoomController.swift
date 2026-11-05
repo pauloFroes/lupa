@@ -152,17 +152,11 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         lastActivity = CACurrentMediaTime()
         lastMouse = NSEvent.mouseLocation
         // O clique passa pela janela do zoom e vai para os apps; o monitor global o enxerga.
-        // O local cobre os cliques nas janelas da própria Lupa.
+        // Cliques nas janelas da própria Lupa (barra de gravação, bolha) não dão zoom.
         if let global = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] _ in
             self?.handleClick()
         }) {
             clickMonitors.append(global)
-        }
-        if let local = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] event in
-            self?.handleClick()
-            return event
-        }) {
-            clickMonitors.append(local)
         }
     }
 

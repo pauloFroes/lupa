@@ -78,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pause.isHidden = true
         menu.addItem(pause)
         pauseItem = pause
+        menu.addItem(menuItem("Abrir pasta das gravações", #selector(openRecordingsFolder)))
         menu.addItem(.separator())
         menu.addItem(menuItem("Ajustes…", #selector(openSettings), key: ","))
         let login = menuItem("Abrir ao iniciar sessão", #selector(toggleLogin))
@@ -112,6 +113,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         loginItem?.state = LoginItem.isEnabled ? .on : .off
+    }
+
+    @objc private func openRecordingsFolder() {
+        let folder = ScreenRecorder.folder
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(folder)
     }
 
     @objc private func togglePause() {

@@ -73,14 +73,16 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
     // MARK: - Ciclo
 
-    func start(screen: NSScreen, area: CGRect?, options: RecordingOptions) async throws {
+    func start(screen: NSScreen, area: CGRect?, options: RecordingOptions, excluding windowIDs: [CGWindowID] = []) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         let displayID = ScreenCapture.displayID(of: screen)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw RecordingError.displayNotFound
         }
-        // Nada da Lupa fica de fora: zoom, desenho, bolha da câmera e zoom ao vivo entram no vídeo.
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        // Zoom, desenho, bolha da câmera e zoom ao vivo entram no vídeo.
+        // Só a barra de controle da gravação fica de fora.
+        let excluded = content.windows.filter { windowIDs.contains($0.windowID) }
+        let filter = SCContentFilter(display: display, excludingWindows: excluded)
         let configuration = Self.configuration(screen: screen, area: area, options: options)
         let url = try Self.makeOutputURL()
         try setUpWriter(url: url, configuration: configuration, options: options)
@@ -175,9 +177,14 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         max(2, Int(value) & ~1)
     }
 
+    // ~/Filmes/Lupa
+    static var folder: URL {
+        FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Lupa", isDirectory: true)
+    }
+
     private static func makeOutputURL() throws -> URL {
-        let movies = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
-        let folder = movies.appendingPathComponent("Lupa", isDirectory: true)
+        let folder = Self.folder
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'às' HH.mm.ss"

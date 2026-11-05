@@ -207,7 +207,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let pauseHotKeyID { HotKeyCenter.shared.unregister(pauseHotKeyID) }
         pauseHotKeyID = nil
         if active, let shortcut = pauseShortcut {
-            pauseHotKeyID = HotKeyCenter.shared.register(shortcut) { [weak self] in self?.recording.togglePause() }
+            pauseHotKeyID = HotKeyCenter.shared.register(shortcut) { [weak self] in
+                HotKeyCenter.log.notice("pausar/retomar a gravação pelo atalho")
+                self?.recording.togglePause()
+            }
         }
         if active {
             if live.isActive {

@@ -4,9 +4,9 @@ import AppKit
 // Bolha da câmera que entra na gravação. Fica acima da sobreposição de zoom e desenho
 // (screenSaver + 1) para continuar no vídeo quando você aproxima a tela.
 // Quando o mouse de fato vai até a bolha (segue na direção dela, para em cima ou perto dela por
-// um instante), ela desliza devagar para o canto oposto; passar por perto não a move. Ela fica
-// no novo lugar pelo menos um tempo e só volta quando o mouse se afasta do lugar original e fica
-// longe. Segurar ⌥ deixa a bolha parada para arrastar.
+// um instante), ela desliza devagar para o canto oposto; passar por perto não a move. No canto
+// oposto ela só sai em dois casos: o mouse vai até ela de novo, ou passaram `awayStay` segundos
+// e o mouse está fora da zona que a fez fugir. Segurar ⌥ deixa a bolha parada para arrastar.
 final class CameraBubble {
     private var panel: NSPanel?
     private let session = AVCaptureSession()
@@ -19,9 +19,10 @@ final class CameraBubble {
     private static let restDistance: CGFloat = 30
     // A intenção precisa durar isto para a bolha se mexer: uma passada rápida não conta.
     private static let intentHold: CFTimeInterval = 0.3
-    // Depois de mudar de lugar, a bolha fica pelo menos isto antes de mudar de novo.
-    private static let minStay: CFTimeInterval = 1.5
-    // Para voltar, o mouse fica além desta distância do lugar original por `returnHold`.
+    // No lugar de fuga a bolha fica pelo menos isto. Antes disso só sai se o mouse for até ela.
+    private static let awayStay: CFTimeInterval = 8
+    // Depois desse tempo, volta se o mouse estiver além desta distância do lugar original
+    // (fora da zona que a fez fugir) por `returnHold`.
     private static let returnDistance: CGFloat = 200
     private static let returnHold: CFTimeInterval = 1.0
 
@@ -184,22 +185,22 @@ final class CameraBubble {
     private func decide(mouse: CGPoint, away: CGPoint, now: CFTimeInterval) {
         let occupied = isAway ? away : home
         let other = isAway ? home : away
-        let settled = now - movedAt > Self.minStay
+        let stayedLongEnough = now - movedAt > Self.awayStay
 
         // O mouse quer o lugar onde a bolha está agora: ela vai para o outro, se ele estiver livre.
         if wantsSpot(mouse: mouse, bubbleAt: occupied), distance(from: mouse, toBubbleAt: other) > Self.approachDistance {
             let since = intentSince ?? now
             intentSince = since
-            if settled, now - since >= Self.intentHold { move(away: !isAway, now: now) }
+            if now - since >= Self.intentHold { move(away: !isAway, now: now) }
         } else {
             intentSince = nil
         }
 
-        // Fora do lugar, volta quando o mouse se afasta do original e fica longe.
+        // Fora do lugar, só volta sozinha depois de `awayStay` e com o mouse fora da zona original.
         if isAway, distance(from: mouse, toBubbleAt: home) > Self.returnDistance {
             let since = clearSince ?? now
             clearSince = since
-            if settled, now - since >= Self.returnHold { move(away: false, now: now) }
+            if stayedLongEnough, now - since >= Self.returnHold { move(away: false, now: now) }
         } else {
             clearSince = nil
         }

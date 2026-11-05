@@ -19,7 +19,7 @@ final class RecordingControlBar {
         model.time = "00:00"
         model.paused = false
         let view = RecordingControlView(model: model, shortcut: shortcut, onPause: onPause, onStop: onStop)
-        let host = NSHostingView(rootView: view)
+        let host = FirstClickHostingView(rootView: view)
         host.layoutSubtreeIfNeeded()
         let size = host.fittingSize
         let panel = NSPanel(
@@ -50,6 +50,11 @@ final class RecordingControlBar {
     }
 }
 
+// A barra nunca vira janela ativa: sem isto o primeiro clique só a "ativaria".
+private final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 private struct RecordingControlView: View {
     @ObservedObject var model: RecordingControlModel
     let shortcut: String
@@ -67,14 +72,21 @@ private struct RecordingControlView: View {
                 .font(.lupaMono(13))
                 .foregroundColor(Palette.onInkText)
                 .frame(minWidth: 48, alignment: .leading)
+            // O botão inteiro recebe o clique (com .plain, só o desenho do ícone recebia).
             Button(action: onPause) {
-                Image(systemName: model.paused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 12, weight: .bold))
-                    .frame(width: 32, height: 30)
-                    .background(RoundedRectangle(cornerRadius: 8).stroke(Palette.inkBorder, lineWidth: 1))
+                HStack(spacing: 6) {
+                    Image(systemName: model.paused ? "play.fill" : "pause.fill")
+                        .font(.system(size: 11, weight: .bold))
+                    Text(model.paused ? "Retomar" : "Pausar").font(.lupaText(13, .bold))
+                }
+                .foregroundColor(model.paused ? Palette.inkDeep : Palette.paper)
+                .padding(.horizontal, 12)
+                .frame(height: 30)
+                .background(RoundedRectangle(cornerRadius: 8).fill(model.paused ? Palette.lime : Palette.inkRaised))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.inkBorder, lineWidth: 1))
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(model.paused ? "Retomar" : "Pausar")
             Button(action: onStop) {
                 HStack(spacing: 6) {
                     Image(systemName: "stop.fill").font(.system(size: 11, weight: .bold))
@@ -87,6 +99,7 @@ private struct RecordingControlView: View {
                 .padding(.horizontal, 12)
                 .frame(height: 30)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Palette.danger))
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }

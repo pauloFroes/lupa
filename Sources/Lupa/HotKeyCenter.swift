@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import os
 
 // Atalhos globais pelo Carbon: o RegisterEventHotKey não pede a permissão de Acessibilidade,
 // ao contrário de um monitor global de teclado.
@@ -26,8 +27,9 @@ final class HotKeyCenter {
                 &hotKeyID
             )
             guard status == noErr else { return status }
-            let id = hotKeyID.id
-            DispatchQueue.main.async { HotKeyCenter.shared.fire(id) }
+            // O Carbon já entrega o evento na thread principal. Chamar direto, sem a fila: se algo
+            // travar a fila principal (uma exceção num job dela), os atalhos continuam respondendo.
+            HotKeyCenter.shared.fire(hotKeyID.id)
             return noErr
         }, 1, &spec, nil, &eventHandler)
     }
@@ -45,7 +47,11 @@ final class HotKeyCenter {
             0,
             &ref
         )
-        guard status == noErr, let ref else { return nil }
+        guard status == noErr, let ref else {
+            Self.log.error("atalho \(shortcut.displayString, privacy: .public) não registrou (status \(status, privacy: .public))")
+            return nil
+        }
+        Self.log.notice("atalho \(shortcut.displayString, privacy: .public) registrado como \(id, privacy: .public)")
         refs[id] = ref
         handlers[id] = handler
         return id
@@ -58,7 +64,10 @@ final class HotKeyCenter {
         handlers[id] = nil
     }
 
+    static let log = Logger(subsystem: "io.github.paulofroes.lupa", category: "atalhos")
+
     private func fire(_ id: UInt32) {
+        Self.log.notice("atalho \(id, privacy: .public) disparou")
         handlers[id]?()
     }
 }

@@ -41,10 +41,14 @@ enum ModelCatalog {
         return Double(id[range].dropFirst(4))
     }
 
+    // Família gpt-6: sol é o maior, depois terra, astra e luna (o mais leve).
+    private static let tiers = ["sol": 0.4, "terra": 0.3, "astra": 0.2, "luna": 0.1]
+
     private static func score(_ id: String) -> Double {
         let size = id.contains("nano") ? 0.0 : id.contains("mini") ? 1.0 : 2.0
         let latest = id.contains("chat-latest") ? -0.5 : 0
-        return (version(id) ?? 0) * 10 + size + latest
+        let tier = tiers.first { id.hasSuffix("-" + $0.key) }?.value ?? 0
+        return (version(id) ?? 0) * 10 + size + latest + tier
     }
 }
 
@@ -53,11 +57,11 @@ enum ModelCatalog {
 // não espera por ele: a frase aparece na hora e é trocada quando a revisão chega. O modelo é o dos
 // Ajustes; no automático, o melhor da conta. Se ele falhar, tenta os rápidos da lista de reserva.
 final class CaptionReviser {
-    private static let fallbacks = ["gpt-5-nano", "gpt-4.1-nano", "gpt-4o-mini"]
+    private static let fallbacks = ["gpt-6-luna", "gpt-5.4-mini", "gpt-4.1-mini", "gpt-4o-mini"]
     private var unavailable = Set<String>()
     // Variante do parâmetro de raciocínio que cada modelo aceita (índice em `reasoningVariants`).
     private var reasoning: [String: Int] = [:]
-    private static let reasoningVariants: [String?] = ["none", "minimal", nil]
+    private static let reasoningVariants: [String?] = ["none", "minimal", "low", nil]
 
     func review(_ sentence: String, context: [String], vocabulary: String, language: String, model chosen: String, key: String) async -> String? {
         guard sentence.count >= 4 else { return nil }
@@ -101,7 +105,7 @@ final class CaptionReviser {
         if !context.isEmpty { input += "Frases anteriores (só contexto):\n\(context.joined(separator: "\n"))\n\n" }
         input += "Frase a revisar:\n\(sentence)"
 
-        var variant = reasoning[model] ?? (model.hasPrefix("gpt-5") || model.hasPrefix("gpt-6") ? 0 : 2)
+        var variant = reasoning[model] ?? (model.hasPrefix("gpt-5") || model.hasPrefix("gpt-6") ? 0 : 3)
         while variant < Self.reasoningVariants.count {
             var body: [String: Any] = [
                 "model": model,

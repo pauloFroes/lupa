@@ -1,108 +1,97 @@
 import AVFoundation
-import CoreAudio
 
 enum MicrophoneError: LocalizedError {
     case noInput
-    case converter
+    case cannotRead
 
     var errorDescription: String? {
         switch self {
         case .noInput: "Nenhum microfone disponível."
-        case .converter: "Não deu para converter o áudio do microfone."
+        case .cannotRead: "Não deu para ler o microfone."
         }
     }
 }
 
 // Lê o microfone e entrega PCM de 16 bits, mono, 24 kHz (o formato da transcrição da OpenAI),
-// em blocos de ~100 ms. Corre à parte da gravação: o arquivo continua com a faixa do microfone
-// que o ScreenCaptureKit captura.
-final class MicrophoneStream {
+// em blocos de ~100 ms. Usa o AVCaptureSession, que escolhe o aparelho pelo mesmo ID do painel de
+// gravação e já converte o formato: o tap do AVAudioEngine lança exceção do Objective-C (que o
+// Swift não pega) quando o formato do aparelho muda, como num fone Bluetooth a 16 kHz.
+final class MicrophoneStream: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     static let sampleRate = 24_000.0
     var onAudio: ((Data) -> Void)?
     // Nível RMS de 0 a 1 do último bloco, para saber se há fala chegando.
     private(set) var level: Float = 0
 
-    private let engine = AVAudioEngine()
-    private var converter: AVAudioConverter?
-    private let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
+    private let session = AVCaptureSession()
+    private let queue = DispatchQueue(label: "lupa.captions.mic")
     private var pending = Data()
     private let chunkBytes = Int(sampleRate / 10) * 2
 
     func start(deviceUID: String?) throws {
-        let input = engine.inputNode
-        if let deviceUID, let device = Self.deviceID(forUID: deviceUID), let unit = input.audioUnit {
-            var id = device
-            AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &id, UInt32(MemoryLayout<AudioDeviceID>.size))
+        let device = deviceUID.flatMap { AVCaptureDevice(uniqueID: $0) } ?? AVCaptureDevice.default(for: .audio)
+        guard let device else { throw MicrophoneError.noInput }
+        let input = try AVCaptureDeviceInput(device: device)
+        let output = AVCaptureAudioDataOutput()
+        output.audioSettings = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: Self.sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+        ]
+        output.setSampleBufferDelegate(self, queue: queue)
+        session.beginConfiguration()
+        guard session.canAddInput(input), session.canAddOutput(output) else {
+            session.commitConfiguration()
+            throw MicrophoneError.cannotRead
         }
-        let inputFormat = input.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else { throw MicrophoneError.noInput }
-        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else { throw MicrophoneError.converter }
-        self.converter = converter
+        session.addInput(input)
+        session.addOutput(output)
+        session.commitConfiguration()
         pending.removeAll()
-        input.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { [weak self] buffer, _ in
-            self?.process(buffer)
-        }
-        engine.prepare()
-        try engine.start()
+        session.startRunning()
+        NSLog("Lupa legenda: microfone %@", device.localizedName)
     }
 
     func stop() {
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        converter = nil
-        if !pending.isEmpty { onAudio?(pending) }
-        pending.removeAll()
+        session.stopRunning()
+        queue.sync {
+            if !pending.isEmpty { onAudio?(pending) }
+            pending.removeAll()
+        }
+        session.beginConfiguration()
+        session.inputs.forEach { session.removeInput($0) }
+        session.outputs.forEach { session.removeOutput($0) }
+        session.commitConfiguration()
     }
 
-    private func process(_ buffer: AVAudioPCMBuffer) {
-        guard let converter else { return }
-        let ratio = outputFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 32
-        guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else { return }
-        var consumed = false
-        var error: NSError?
-        converter.convert(to: output, error: &error) { _, status in
-            if consumed {
-                status.pointee = .noDataNow
-                return nil
-            }
-            consumed = true
-            status.pointee = .haveData
-            return buffer
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard let block = sampleBuffer.dataBuffer else { return }
+        let length = CMBlockBufferGetDataLength(block)
+        guard length > 1 else { return }
+        var data = Data(count: length)
+        let status = data.withUnsafeMutableBytes { raw in
+            CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: raw.baseAddress!)
         }
-        guard error == nil, output.frameLength > 0, let samples = output.int16ChannelData?[0] else { return }
-        let count = Int(output.frameLength)
+        guard status == kCMBlockBufferNoErr else { return }
         // RMS: o pico pega estalos e ruído; a média de energia separa melhor fala de silêncio.
-        var sum: Float = 0
-        for index in 0 ..< count {
-            let sample = Float(samples[index]) / Float(Int16.max)
-            sum += sample * sample
+        let sum = data.withUnsafeBytes { raw -> Float in
+            let samples = raw.bindMemory(to: Int16.self)
+            var total: Float = 0
+            for sample in samples {
+                let value = Float(sample) / Float(Int16.max)
+                total += value * value
+            }
+            return samples.isEmpty ? 0 : total / Float(samples.count)
         }
-        level = (sum / Float(count)).squareRoot()
-        pending.append(Data(bytes: samples, count: count * 2))
+        level = sum.squareRoot()
+        pending.append(data)
         while pending.count >= chunkBytes {
             let chunk = pending.prefix(chunkBytes)
             pending.removeFirst(chunkBytes)
             onAudio?(Data(chunk))
         }
-    }
-
-    // O uniqueID do AVCaptureDevice de áudio é o UID do Core Audio.
-    private static func deviceID(forUID uid: String) -> AudioDeviceID? {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyTranslateUIDToDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var cfUID = uid as CFString
-        var device = AudioDeviceID(0)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        let status = withUnsafeMutablePointer(to: &cfUID) { pointer in
-            AudioObjectGetPropertyData(
-                AudioObjectID(kAudioObjectSystemObject), &address,
-                UInt32(MemoryLayout<CFString>.size), pointer, &size, &device
-            )
-        }
-        return status == noErr && device != kAudioObjectUnknown ? device : nil
     }
 }

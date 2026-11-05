@@ -28,9 +28,23 @@ enum Keychain {
             kSecAttrAccount as String: account,
             kSecAttrLabel as String: "Lupa: chave da OpenAI",
             kSecValueData as String: Data(value.utf8),
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
         ]
-        return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+        var withAccess = attributes
+        if let access = openAccess() { withAccess[kSecAttrAccess as String] = access }
+        return SecItemAdd(withAccess as CFDictionary, nil) == errSecSuccess
+    }
+
+    // Escolha do Paulo (2026-11-05): leitura liberada, sem pedir a senha do Mac. A assinatura local
+    // muda a cada build e o chaveiro tratava cada instalação como um app novo. Equivale a
+    // "Permitir que todos os aplicativos acessem este item" no Acesso às Chaves.
+    private static func openAccess() -> SecAccess? {
+        var access: SecAccess?
+        guard SecAccessCreate("Lupa: chave da OpenAI" as CFString, nil, &access) == errSecSuccess, let access else { return nil }
+        let acls = (SecAccessCopyMatchingACLList(access, kSecACLAuthorizationDecrypt) as? [SecACL]) ?? []
+        for acl in acls {
+            SecACLSetContents(acl, nil, "Lupa: chave da OpenAI" as CFString, SecKeychainPromptSelector())
+        }
+        return access
     }
 
     static func delete(_ account: String) {
@@ -55,6 +69,11 @@ enum OpenAIKey {
         let key = Keychain.read(account)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let result = key?.isEmpty == false ? key : nil
         cached = .some(result)
+        // Item gravado antes, amarrado a uma instalação: regrava uma vez com a leitura liberada.
+        let migrated = "openAIKeyOpenAccess"
+        if let result, !UserDefaults.standard.bool(forKey: migrated), Keychain.save(result, for: account) {
+            UserDefaults.standard.set(true, forKey: migrated)
+        }
         return result
     }
 

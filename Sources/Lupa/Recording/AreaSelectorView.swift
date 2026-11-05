@@ -9,6 +9,16 @@ final class AreaSelectorView: NSView {
     private var start: CGPoint?
     private var selection: CGRect?
     private var mouse: CGPoint = .zero
+    // Área da gravação anterior, já marcada: ↩ grava nela de novo.
+    private var previous: CGRect?
+
+    convenience init(frame: NSRect, previous: CGRect?) {
+        self.init(frame: frame)
+        if let previous, frame.contains(previous), previous.width >= 32, previous.height >= 32 {
+            self.previous = previous
+            selection = previous
+        }
+    }
 
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -43,7 +53,7 @@ final class AreaSelectorView: NSView {
     override func mouseUp(with event: NSEvent) {
         guard let selection, selection.width >= 32, selection.height >= 32 else {
             start = nil
-            self.selection = nil
+            self.selection = previous
             needsDisplay = true
             return
         }
@@ -53,7 +63,12 @@ final class AreaSelectorView: NSView {
     override func keyDown(with event: NSEvent) {
         switch Int(event.keyCode) {
         case kVK_Escape: onFinish?(nil)
-        case kVK_Return, kVK_ANSI_KeypadEnter: onFinish?(bounds)
+        case kVK_Return, kVK_ANSI_KeypadEnter:
+            if event.modifierFlags.contains(.shift) {
+                onFinish?(bounds)
+            } else {
+                onFinish?(selection?.integral ?? bounds)
+            }
         default: break
         }
     }
@@ -75,7 +90,9 @@ final class AreaSelectorView: NSView {
             drawSizeLabel(for: selection)
         }
         HUD.drawBar(
-            [.badge("área"), HUD.hint("arraste", "escolhe"), HUD.hint("↩", "tela inteira"), HUD.hint("esc", "cancela")],
+            selection == nil
+                ? [.badge("área"), HUD.hint("arraste", "escolhe"), HUD.hint("↩", "tela inteira"), HUD.hint("esc", "cancela")]
+                : [.badge("área"), HUD.hint("↩", "grava nesta área"), HUD.hint("arraste", "escolhe outra"), HUD.hint("⇧↩", "tela inteira"), HUD.hint("esc", "cancela")],
             style: .primary,
             centerX: bounds.midX,
             bottom: 40,

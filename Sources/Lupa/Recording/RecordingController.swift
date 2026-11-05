@@ -187,7 +187,7 @@ final class RecordingController {
 
     private func selectArea(on screen: NSScreen) {
         let window = OverlayWindow(screen: screen)
-        let view = AreaSelectorView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        let view = AreaSelectorView(frame: NSRect(origin: .zero, size: screen.frame.size), previous: prefs.recording.lastArea)
         view.onFinish = { [weak self] rect in
             self?.selectorWindow?.orderOut(nil)
             self?.selectorWindow = nil
@@ -195,6 +195,7 @@ final class RecordingController {
                 self?.cancelPreparation()
                 return
             }
+            if rect != view.bounds { self?.prefs.recording.lastArea = rect }
             self?.countdown(screen: screen, area: rect == view.bounds ? nil : rect)
         }
         window.contentView = view
@@ -205,7 +206,10 @@ final class RecordingController {
     }
 
     private func countdown(screen: NSScreen, area: CGRect?) {
-        if prefs.recording.camera { try? camera.show(on: screen) }
+        if prefs.recording.camera {
+            camera.onMove = { [weak self] origin in self?.prefs.recording.cameraOrigin = origin }
+            try? camera.show(on: screen, at: prefs.recording.cameraOrigin)
+        }
         let window = OverlayWindow(screen: screen)
         window.ignoresMouseEvents = true
         let view = CountdownView(frame: NSRect(origin: .zero, size: screen.frame.size))

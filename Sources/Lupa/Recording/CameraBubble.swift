@@ -42,8 +42,10 @@ final class CameraBubble {
     private var movedAt: CFTimeInterval = 0
     private var lastSetOrigin: CGPoint = .zero
     private var isDragging = false
+    // Avisa o novo lugar escolhido (arrastando), para a próxima gravação começar nele.
+    var onMove: ((CGPoint) -> Void)?
 
-    func show(on screen: NSScreen) throws {
+    func show(on screen: NSScreen, at savedOrigin: CGPoint? = nil) throws {
         guard panel == nil else { return }
         guard let device = AVCaptureDevice.default(for: .video) else { return }
         let input = try AVCaptureDeviceInput(device: device)
@@ -53,12 +55,16 @@ final class CameraBubble {
         session.commitConfiguration()
 
         let size = Self.diameter
-        let frame = NSRect(
+        var frame = NSRect(
             x: screen.visibleFrame.maxX - size - Self.margin,
             y: screen.visibleFrame.minY + Self.margin,
             width: size,
             height: size
         )
+        if let savedOrigin {
+            let saved = NSRect(origin: savedOrigin, size: frame.size)
+            if screen.visibleFrame.contains(saved) { frame = saved }
+        }
         let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
         panel.isOpaque = false
@@ -135,6 +141,7 @@ final class CameraBubble {
             isDragging = false
             let origin = clamped(panel.frame.origin)
             home = origin
+            onMove?(origin)
             isAway = false
             springX.snap(to: origin.x)
             springY.snap(to: origin.y)

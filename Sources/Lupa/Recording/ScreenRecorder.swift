@@ -28,6 +28,10 @@ struct RecordingOptions: Codable, Equatable {
     var showClicks = true
     var quality: Quality = .hevc
     var framesPerSecond = 60
+    // Última área escolhida e último lugar da bolha da câmera, em pontos da tela (origem embaixo
+    // à esquerda); voltam na próxima gravação.
+    var lastArea: CGRect?
+    var cameraOrigin: CGPoint?
 }
 
 enum RecordingError: LocalizedError {

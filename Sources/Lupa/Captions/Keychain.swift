@@ -46,9 +46,16 @@ enum Keychain {
 enum OpenAIKey {
     private static let account = "openai-api-key"
 
+    // Lida do chaveiro uma vez por abertura da Lupa: o painel de gravação e o revisor consultam
+    // a chave toda hora, e cada leitura podia fazer o macOS pedir a senha de novo.
+    private static var cached: String??
+
     static var value: String? {
+        if let cached { return cached }
         let key = Keychain.read(account)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return key?.isEmpty == false ? key : nil
+        let result = key?.isEmpty == false ? key : nil
+        cached = .some(result)
+        return result
     }
 
     static var isSet: Bool { value != nil }
@@ -58,9 +65,12 @@ enum OpenAIKey {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             Keychain.delete(account)
+            cached = .some(nil)
             return true
         }
-        return Keychain.save(trimmed, for: account)
+        let saved = Keychain.save(trimmed, for: account)
+        if saved { cached = .some(trimmed) }
+        return saved
     }
 
     // Mostra só o começo e o fim, para conferir qual chave está salva sem expô-la.

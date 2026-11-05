@@ -3,18 +3,27 @@ import AppKit
 
 // Bolha da câmera que entra na gravação. Fica acima da sobreposição de zoom e desenho
 // (screenSaver + 1) para continuar no vídeo quando você aproxima a tela.
-// Quando o mouse chega perto, a bolha desliza para o canto oposto e volta ao lugar dela
-// quando o mouse se afasta. Segurar ⌥ deixa a bolha parada para arrastar.
+// Quando o mouse de fato vai até a bolha (segue na direção dela, para em cima ou perto dela por
+// um instante), ela desliza devagar para o canto oposto; passar por perto não a move. Ela fica
+// no novo lugar pelo menos um tempo e só volta quando o mouse se afasta do lugar original e fica
+// longe. Segurar ⌥ deixa a bolha parada para arrastar.
 final class CameraBubble {
     private var panel: NSPanel?
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "lupa.camera")
     private static let diameter: CGFloat = 220
     private static let margin: CGFloat = 32
-    // Distância do mouse à borda da bolha que a faz desviar.
-    private static let dodgeDistance: CGFloat = 60
-    // O mouse precisa se afastar mais que isso da borda do lugar original para ela voltar.
-    private static let returnDistance: CGFloat = 140
+    // Só dentro desta distância da borda o movimento do mouse conta como ir até a bolha.
+    private static let approachDistance: CGFloat = 90
+    // Parado (ou quase) a esta distância da borda, o mouse também quer o lugar dela.
+    private static let restDistance: CGFloat = 30
+    // A intenção precisa durar isto para a bolha se mexer: uma passada rápida não conta.
+    private static let intentHold: CFTimeInterval = 0.3
+    // Depois de mudar de lugar, a bolha fica pelo menos isto antes de mudar de novo.
+    private static let minStay: CFTimeInterval = 1.5
+    // Para voltar, o mouse fica além desta distância do lugar original por `returnHold`.
+    private static let returnDistance: CGFloat = 200
+    private static let returnHold: CFTimeInterval = 1.0
 
     private var screen: NSScreen?
     private var timer: Timer?
@@ -22,8 +31,14 @@ final class CameraBubble {
     // Lugar escolhido (origem da janela); muda quando você arrasta a bolha.
     private var home: CGPoint = .zero
     private var isAway = false
-    private var springX = Spring(value: 0, response: 0.45)
-    private var springY = Spring(value: 0, response: 0.45)
+    // Mais lenta que o cursor: a bolha desliza, não salta.
+    private var springX = Spring(value: 0, response: 0.9)
+    private var springY = Spring(value: 0, response: 0.9)
+    private var mouseVelocity = CGVector.zero
+    private var lastMouse: CGPoint?
+    private var intentSince: CFTimeInterval?
+    private var clearSince: CFTimeInterval?
+    private var movedAt: CFTimeInterval = 0
     private var lastSetOrigin: CGPoint = .zero
     private var isDragging = false
 
@@ -133,20 +148,14 @@ final class CameraBubble {
             lastSetOrigin = home
         }
 
+        trackVelocity(mouse, dt: dt)
         let holdingOption = NSEvent.modifierFlags.contains(.option)
         let away = awayOrigin()
-        if !holdingOption {
-            if isAway {
-                if distance(from: mouse, toBubbleAt: home) > Self.returnDistance {
-                    isAway = false
-                } else if distance(from: mouse, toBubbleAt: away) < Self.dodgeDistance {
-                    // O mouse foi atrás dela: volta ao lugar original.
-                    isAway = false
-                }
-            } else if distance(from: mouse, toBubbleAt: home) < Self.dodgeDistance,
-                      distance(from: mouse, toBubbleAt: away) > Self.dodgeDistance {
-                isAway = true
-            }
+        if holdingOption {
+            intentSince = nil
+            clearSince = nil
+        } else {
+            decide(mouse: mouse, away: away, now: now)
         }
 
         let target = isAway ? away : home
@@ -156,6 +165,64 @@ final class CameraBubble {
         springX.step(dt)
         springY.step(dt)
         setOrigin(CGPoint(x: springX.value.rounded(), y: springY.value.rounded()))
+    }
+
+    private func trackVelocity(_ mouse: CGPoint, dt: Double) {
+        defer { lastMouse = mouse }
+        guard let last = lastMouse, dt > 0 else { return }
+        let instant = CGVector(dx: (mouse.x - last.x) / dt, dy: (mouse.y - last.y) / dt)
+        // Média móvel de ~80 ms: tira o tremor sem atrasar a leitura da direção.
+        let a = CGFloat(1 - exp(-dt / 0.08))
+        mouseVelocity.dx += (instant.dx - mouseVelocity.dx) * a
+        mouseVelocity.dy += (instant.dy - mouseVelocity.dy) * a
+    }
+
+    private func decide(mouse: CGPoint, away: CGPoint, now: CFTimeInterval) {
+        let occupied = isAway ? away : home
+        let other = isAway ? home : away
+        let settled = now - movedAt > Self.minStay
+
+        // O mouse quer o lugar onde a bolha está agora: ela vai para o outro, se ele estiver livre.
+        if wantsSpot(mouse: mouse, bubbleAt: occupied), distance(from: mouse, toBubbleAt: other) > Self.approachDistance {
+            let since = intentSince ?? now
+            intentSince = since
+            if settled, now - since >= Self.intentHold { move(away: !isAway, now: now) }
+        } else {
+            intentSince = nil
+        }
+
+        // Fora do lugar, volta quando o mouse se afasta do original e fica longe.
+        if isAway, distance(from: mouse, toBubbleAt: home) > Self.returnDistance {
+            let since = clearSince ?? now
+            clearSince = since
+            if settled, now - since >= Self.returnHold { move(away: false, now: now) }
+        } else {
+            clearSince = nil
+        }
+    }
+
+    private func move(away: Bool, now: CFTimeInterval) {
+        isAway = away
+        movedAt = now
+        intentSince = nil
+        clearSince = nil
+    }
+
+    // Intenção de ir até a bolha: em cima dela, parado bem perto, ou vindo na direção dela.
+    private func wantsSpot(mouse: CGPoint, bubbleAt origin: CGPoint) -> Bool {
+        let d = distance(from: mouse, toBubbleAt: origin)
+        if d > Self.approachDistance { return false }
+        if d <= 0 { return true }
+        let speed = hypot(mouseVelocity.dx, mouseVelocity.dy)
+        if speed < 60 { return d < Self.restDistance }
+        let radius = Self.diameter / 2
+        let center = CGPoint(x: origin.x + radius, y: origin.y + radius)
+        let toCenter = CGVector(dx: center.x - mouse.x, dy: center.y - mouse.y)
+        let length = max(1, hypot(toCenter.dx, toCenter.dy))
+        let heading = (mouseVelocity.dx * toCenter.dx + mouseVelocity.dy * toCenter.dy) / (speed * length)
+        // Seguindo assim por 0,3 s, o mouse chega à bolha.
+        let ahead = CGPoint(x: mouse.x + mouseVelocity.dx * 0.3, y: mouse.y + mouseVelocity.dy * 0.3)
+        return heading > 0.6 && distance(from: ahead, toBubbleAt: origin) < d
     }
 
     private func setOrigin(_ origin: CGPoint) {
@@ -178,7 +245,7 @@ final class CameraBubble {
         let mirroredY = frame.minY + frame.maxY - size - home.y
         let dx = abs(mirroredX - home.x)
         let dy = abs(mirroredY - home.y)
-        let point = dx >= size + Self.dodgeDistance || dx >= dy
+        let point = dx >= size + Self.approachDistance || dx >= dy
             ? CGPoint(x: mirroredX, y: home.y)
             : CGPoint(x: home.x, y: mirroredY)
         return clamped(point)

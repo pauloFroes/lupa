@@ -1,6 +1,6 @@
 // Testa a transcrição em tempo real da OpenAI fora do app, com a mesma conversa que a Lupa usa.
 // Uso: scripts/test-transcription.swift [arquivo.wav]  (PCM 16 bits, mono, 24 kHz)
-// Sem arquivo, gera uma frase com o `say`. A chave vem de OPENAI_API_KEY ou do chaveiro da Lupa.
+// Sem arquivo, gera uma frase com o `say`. A chave vem de OPENAI_API_KEY, do arquivo da Lupa ou do chaveiro.
 import Foundation
 
 func run(_ path: String, _ args: [String]) -> String {
@@ -15,7 +15,10 @@ func run(_ path: String, _ args: [String]) -> String {
         .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+let keyFile = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Library/Application Support/Lupa/openai-key")
 let key = ProcessInfo.processInfo.environment["OPENAI_API_KEY"]
+    ?? (try? String(contentsOf: keyFile, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
     ?? run("/usr/bin/security", ["find-generic-password", "-s", "io.github.paulofroes.lupa", "-a", "openai-api-key", "-w"])
 guard !key.isEmpty else { print("sem chave"); exit(1) }
 

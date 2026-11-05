@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-// A chave da OpenAI fica no chaveiro de início de sessão, nunca nos UserDefaults.
+// Leitura e remoção do item antigo da chave da OpenAI no chaveiro (antes de ela ir para o arquivo).
 enum Keychain {
     private static let service = "io.github.paulofroes.lupa"
 
@@ -19,36 +19,6 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    @discardableResult
-    static func save(_ value: String, for account: String) -> Bool {
-        delete(account)
-        let attributes: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecAttrLabel as String: "Lupa: chave da OpenAI",
-            kSecValueData as String: Data(value.utf8),
-        ]
-        var withAccess = attributes
-        if let access = openAccess() { withAccess[kSecAttrAccess as String] = access }
-        if SecItemAdd(withAccess as CFDictionary, nil) == errSecSuccess { return true }
-        // Sem a ACL liberada a gravação ainda vale: a chave nunca fica perdida entre apagar e gravar.
-        return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
-    }
-
-    // Escolha do Paulo (2026-11-05): leitura liberada, sem pedir a senha do Mac. A assinatura local
-    // muda a cada build e o chaveiro tratava cada instalação como um app novo. Equivale a
-    // "Permitir que todos os aplicativos acessem este item" no Acesso às Chaves.
-    private static func openAccess() -> SecAccess? {
-        var access: SecAccess?
-        guard SecAccessCreate("Lupa: chave da OpenAI" as CFString, nil, &access) == errSecSuccess, let access else { return nil }
-        let acls = (SecAccessCopyMatchingACLList(access, kSecACLAuthorizationDecrypt) as? [SecACL]) ?? []
-        for acl in acls {
-            SecACLSetContents(acl, nil, "Lupa: chave da OpenAI" as CFString, SecKeychainPromptSelector())
-        }
-        return access
-    }
-
     static func delete(_ account: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -59,24 +29,30 @@ enum Keychain {
     }
 }
 
+// Escolha do Paulo (2026-11-05): a chave não pede senha nunca. No chaveiro isso não se sustenta
+// com a assinatura local (cada instalação muda o cdhash, que fica na partição do item), então ela
+// vai para um arquivo só do usuário (0600) em Application Support. O item antigo do chaveiro é
+// lido uma última vez, copiado para o arquivo e apagado.
 enum OpenAIKey {
     private static let account = "openai-api-key"
-
-    // Lida do chaveiro uma vez por abertura da Lupa: o painel de gravação e o revisor consultam
-    // a chave toda hora, e cada leitura podia fazer o macOS pedir a senha de novo.
     private static var cached: String??
+
+    private static var file: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Lupa", isDirectory: true)
+            .appendingPathComponent("openai-key")
+    }
 
     static var value: String? {
         if let cached { return cached }
-        let key = Keychain.read(account)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let result = key?.isEmpty == false ? key : nil
-        cached = .some(result)
-        // Item gravado antes, amarrado a uma instalação: regrava uma vez com a leitura liberada.
-        let migrated = "openAIKeyOpenAccess"
-        if let result, !UserDefaults.standard.bool(forKey: migrated), Keychain.save(result, for: account) {
-            UserDefaults.standard.set(true, forKey: migrated)
+        var result = (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if result?.isEmpty != false, let old = Keychain.read(account)?.trimmingCharacters(in: .whitespacesAndNewlines), !old.isEmpty {
+            if write(old) { Keychain.delete(account) }
+            result = old
         }
-        return result
+        let key = result?.isEmpty == false ? result : nil
+        cached = .some(key)
+        return key
     }
 
     static var isSet: Bool { value != nil }
@@ -85,13 +61,31 @@ enum OpenAIKey {
     static func save(_ key: String) -> Bool {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
+            try? FileManager.default.removeItem(at: file)
             Keychain.delete(account)
             cached = .some(nil)
             return true
         }
-        let saved = Keychain.save(trimmed, for: account)
+        let saved = write(trimmed)
         if saved { cached = .some(trimmed) }
         return saved
+    }
+
+    private static func write(_ key: String) -> Bool {
+        let manager = FileManager.default
+        do {
+            try manager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if !manager.fileExists(atPath: file.path) {
+                manager.createFile(atPath: file.path, contents: nil, attributes: [.posixPermissions: 0o600])
+            }
+            try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            try Data(key.utf8).write(to: file)
+            try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            return true
+        } catch {
+            NSLog("Lupa legenda: não gravou a chave: %@", error.localizedDescription)
+            return false
+        }
     }
 
     // Mostra só o começo e o fim, para conferir qual chave está salva sem expô-la.

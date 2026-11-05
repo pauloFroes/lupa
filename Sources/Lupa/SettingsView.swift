@@ -373,7 +373,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 }
 
-// Legenda e transcrição: a chave da OpenAI (no chaveiro), o idioma, o tamanho e quando ligar.
+// Legenda e transcrição: a chave da OpenAI (num arquivo do usuário), o idioma, o tamanho e quando ligar.
 struct CaptionSettings: View {
     @ObservedObject var prefs: Preferences
     @State private var keyField = ""
@@ -449,8 +449,8 @@ struct CaptionSettings: View {
         switch status {
         case .idle:
             Text(savedKey == nil
-                ? "A chave fica no chaveiro do Mac. A transcrição é cobrada na sua conta da OpenAI."
-                : "Chave guardada no chaveiro do Mac.")
+                ? "A chave fica num arquivo só seu, nesta conta do Mac. A transcrição é cobrada na sua conta da OpenAI."
+                : "Chave guardada neste Mac.")
                 .font(.lupaText(12)).foregroundColor(Palette.muted)
         case .checking:
             Text("conferindo a chave…").font(.lupaText(12)).foregroundColor(Palette.muted)
@@ -476,7 +476,7 @@ struct CaptionSettings: View {
         let key = keyField.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return }
         guard OpenAIKey.save(key) else {
-            status = .invalid("não consegui guardar a chave no chaveiro")
+            status = .invalid("não consegui guardar a chave")
             return
         }
         keyField = ""

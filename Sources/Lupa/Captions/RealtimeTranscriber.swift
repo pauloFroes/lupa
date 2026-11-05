@@ -18,7 +18,6 @@ enum TranscriberError: LocalizedError {
 // O gpt-live-transcribe devolve o texto enquanto a pessoa fala; a cada pausa a Lupa fecha o turno
 // (commit) e recebe o texto final daquele trecho. Sem VAD do servidor: esse modelo não aceita.
 final class RealtimeTranscriber: NSObject, URLSessionWebSocketDelegate {
-    static let model = "gpt-live-transcribe"
 
     // item_id, texto acumulado até agora, e se o trecho já é final.
     var onText: ((String, String, Bool) -> Void)?
@@ -31,7 +30,7 @@ final class RealtimeTranscriber: NSObject, URLSessionWebSocketDelegate {
     private var opened = false
     private var seenTypes = Set<String>()
 
-    func connect(key: String, language: String, keywords: [String]) {
+    func connect(key: String, language: String, keywords: [String], choice: TranscriptionChoice) {
         var request = URLRequest(url: URL(string: "wss://api.openai.com/v1/realtime?intent=transcription")!)
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
@@ -42,12 +41,20 @@ final class RealtimeTranscriber: NSObject, URLSessionWebSocketDelegate {
         opened = false
         seenTypes.removeAll()
         task.resume()
-        var transcription: [String: Any] = ["model": Self.model, "delay": "low"]
-        if !language.isEmpty { transcription["languages"] = [language] }
+        var transcription: [String: Any] = ["model": choice.model]
         let cleaned = keywords
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).filter { $0 != "<" && $0 != ">" } }
             .filter { !$0.isEmpty }
-        if !cleaned.isEmpty { transcription["keywords"] = Array(cleaned.prefix(100)) }
+        if let delay = choice.delay {
+            // gpt-live-transcribe: `languages` (lista) e `keywords`; não aceita `language`.
+            transcription["delay"] = delay
+            if !language.isEmpty { transcription["languages"] = [language] }
+            if !cleaned.isEmpty { transcription["keywords"] = Array(cleaned.prefix(100)) }
+        } else {
+            if !language.isEmpty { transcription["language"] = language }
+            if !cleaned.isEmpty { transcription["prompt"] = "Termos da aula: " + cleaned.joined(separator: ", ") }
+        }
+        NSLog("Lupa legenda: transcrição com %@ (%@)", choice.model, choice.delay ?? "frase inteira")
         send([
             "type": "session.update",
             "session": [

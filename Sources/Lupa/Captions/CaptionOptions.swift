@@ -22,6 +22,37 @@ struct CaptionLanguage: Identifiable, Hashable {
     }
 }
 
+// Modelo e ritmo da transcrição. O gpt-live-transcribe mostra o texto enquanto se fala; o `delay`
+// troca rapidez por precisão. O gpt-transcribe só devolve a frase inteira depois de cada pausa.
+enum TranscriptionChoice: String, Codable, CaseIterable, Identifiable {
+    case livePrecise = "live-high"
+    case liveBalanced = "live-medium"
+    case liveFast = "live-low"
+    case wholeSentence = "transcribe"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .livePrecise: "gpt-live-transcribe · máxima precisão"
+        case .liveBalanced: "gpt-live-transcribe · equilibrado"
+        case .liveFast: "gpt-live-transcribe · mais rápido"
+        case .wholeSentence: "gpt-transcribe · frase inteira após a pausa"
+        }
+    }
+
+    var model: String { self == .wholeSentence ? "gpt-transcribe" : "gpt-live-transcribe" }
+
+    var delay: String? {
+        switch self {
+        case .livePrecise: "high"
+        case .liveBalanced: "medium"
+        case .liveFast: "low"
+        case .wholeSentence: nil
+        }
+    }
+}
+
 struct CaptionOptions: Codable, Equatable {
     enum Size: String, Codable, CaseIterable {
         case small, medium, large
@@ -53,6 +84,9 @@ struct CaptionOptions: Codable, Equatable {
     var vocabulary = ""
     // Revisor: um modelo de texto rápido corrige palavras e pontuação de cada frase já fechada.
     var review = true
+    // Padrão: o mais preciso. O revisor vazio escolhe sozinho o melhor modelo da conta.
+    var transcription: TranscriptionChoice = .livePrecise
+    var reviewModel = ""
 
     init() {}
 
@@ -66,5 +100,7 @@ struct CaptionOptions: Codable, Equatable {
         saveTranscript = try c.decodeIfPresent(Bool.self, forKey: .saveTranscript) ?? base.saveTranscript
         vocabulary = try c.decodeIfPresent(String.self, forKey: .vocabulary) ?? base.vocabulary
         review = try c.decodeIfPresent(Bool.self, forKey: .review) ?? base.review
+        transcription = (try? c.decodeIfPresent(TranscriptionChoice.self, forKey: .transcription)) ?? base.transcription
+        reviewModel = try c.decodeIfPresent(String.self, forKey: .reviewModel) ?? base.reviewModel
     }
 }

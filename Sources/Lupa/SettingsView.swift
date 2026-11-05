@@ -379,6 +379,7 @@ struct CaptionSettings: View {
     @State private var keyField = ""
     @State private var savedKey = OpenAIKey.masked
     @State private var status: KeyStatus = .idle
+    @State private var models: [String] = []
 
     enum KeyStatus: Equatable {
         case idle, checking, valid, invalid(String)
@@ -427,6 +428,30 @@ struct CaptionSettings: View {
                     Segmented(options: CaptionOptions.Size.allCases.map(\.label), selection: sizeIndex)
                 }
             }
+            HStack(alignment: .top, spacing: 24) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Modelo da transcrição").font(.lupaText(12, .semibold)).foregroundColor(Palette.muted)
+                    Picker("", selection: $prefs.captions.transcription) {
+                        ForEach(TranscriptionChoice.allCases) { Text($0.label).tag($0) }
+                    }
+                    .labelsHidden()
+                    .frame(width: 300)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Modelo do revisor").font(.lupaText(12, .semibold)).foregroundColor(Palette.muted)
+                    Picker("", selection: $prefs.captions.reviewModel) {
+                        Text(models.first.map { "Automático: o melhor (\($0))" } ?? "Automático: o melhor da conta").tag("")
+                        if !prefs.captions.reviewModel.isEmpty, !models.contains(prefs.captions.reviewModel) {
+                            Text(prefs.captions.reviewModel).tag(prefs.captions.reviewModel)
+                        }
+                        ForEach(models, id: \.self) { Text($0).tag($0) }
+                    }
+                    .labelsHidden()
+                    .frame(width: 260)
+                    .disabled(!prefs.captions.review)
+                }
+            }
+            .task(id: savedKey) { await loadModels() }
             HStack(spacing: 10) {
                 Text("Termos").font(.lupaText(12, .semibold)).foregroundColor(Palette.muted)
                 TextField("nomes e siglas que a transcrição deve acertar, separados por vírgula", text: $prefs.captions.vocabulary)
@@ -470,6 +495,11 @@ struct CaptionSettings: View {
             Spacer()
             LimeToggle(isOn: isOn, action: action)
         }
+    }
+
+    private func loadModels() async {
+        guard let key = OpenAIKey.value else { return }
+        models = await ModelCatalog.textModels(key: key)
     }
 
     private func saveKey() {

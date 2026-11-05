@@ -167,7 +167,7 @@ final class CaptionController {
         let options = prefs.captions
         let keywords = options.vocabulary
             .components(separatedBy: CharacterSet(charactersIn: ",;\n"))
-        transcriber.connect(key: key, language: options.language, keywords: keywords)
+        transcriber.connect(key: key, language: options.language, keywords: keywords, choice: options.transcription)
         self.transcriber = transcriber
     }
 
@@ -289,7 +289,8 @@ final class CaptionController {
         let reviser = reviser
         Task { @MainActor [weak self] in
             guard let revised = await reviser.review(
-                text, context: context, vocabulary: options.vocabulary, language: options.language, key: key
+                text, context: context, vocabulary: options.vocabulary, language: options.language,
+                model: options.reviewModel, key: key
             ) else { return }
             guard let self, self.segments[item]?.text == text else { return }
             self.segments[item]?.text = revised

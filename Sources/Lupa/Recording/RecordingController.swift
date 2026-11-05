@@ -31,6 +31,7 @@ final class RecordingController {
         didSet { recorder?.setLiveCursor(liveZoomActive) }
     }
     var shortcutLabel: () -> String = { "" }
+    var pauseShortcutLabel: () -> String = { "" }
 
     private let prefs = Preferences.shared
     private let camera = CameraBubble()
@@ -260,6 +261,7 @@ final class RecordingController {
         controlBar.show(
             on: screen,
             shortcut: shortcutLabel(),
+            pauseShortcut: pauseShortcutLabel(),
             onPause: { [weak self] in self?.togglePause() },
             onStop: { [weak self] in self?.stop() }
         )

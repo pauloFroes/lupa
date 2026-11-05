@@ -26,6 +26,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let liveInput = LiveZoomInput()
     // Gravando, a tela fica no Ao vivo com zoom automático no clique.
     private var recordingActive = false
+    private var pauseHotKeyID: UInt32?
+
+    // Pausar/retomar: o atalho de gravar com ⇧ (⌃⇧5 no padrão). Só vale enquanto grava.
+    private var pauseShortcut: Shortcut? {
+        guard let record = prefs.shortcuts[.record], !record.flags.contains(.shift) else { return nil }
+        return Shortcut(keyCode: record.keyCode, modifiers: record.modifiers | NSEvent.ModifierFlags.shift.rawValue)
+    }
     private var liveStartedByRecording = false
     private var cancellables = Set<AnyCancellable>()
 
@@ -53,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.recording.liveZoomActive = false
         }
         recording.shortcutLabel = { [weak self] in self?.prefs.shortcuts[.record]?.displayString ?? "" }
+        recording.pauseShortcutLabel = { [weak self] in self?.pauseShortcut?.displayString ?? "" }
         recording.onChange = { [weak self] in self?.updateRecordingState() }
         requestPermissionIfNeeded()
     }
@@ -147,6 +155,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let active = recording.isRecording
         guard active != recordingActive else { return }
         recordingActive = active
+        if let pauseHotKeyID { HotKeyCenter.shared.unregister(pauseHotKeyID) }
+        pauseHotKeyID = nil
+        if active, let shortcut = pauseShortcut {
+            pauseHotKeyID = HotKeyCenter.shared.register(shortcut) { [weak self] in self?.recording.togglePause() }
+        }
         if active {
             if live.isActive {
                 live.setAutoZoom(true, level: prefs.initialZoom)

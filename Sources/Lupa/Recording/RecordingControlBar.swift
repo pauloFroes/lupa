@@ -14,11 +14,11 @@ final class RecordingControlBar {
 
     var windowID: CGWindowID? { panel.map { CGWindowID($0.windowNumber) } }
 
-    func show(on screen: NSScreen, shortcut: String, onPause: @escaping () -> Void, onStop: @escaping () -> Void) {
+    func show(on screen: NSScreen, shortcut: String, pauseShortcut: String, onPause: @escaping () -> Void, onStop: @escaping () -> Void) {
         hide()
         model.time = "00:00"
         model.paused = false
-        let view = RecordingControlView(model: model, shortcut: shortcut, onPause: onPause, onStop: onStop)
+        let view = RecordingControlView(model: model, shortcut: shortcut, pauseShortcut: pauseShortcut, onPause: onPause, onStop: onStop)
         let host = FirstClickHostingView(rootView: view)
         host.layoutSubtreeIfNeeded()
         let size = host.fittingSize
@@ -58,6 +58,7 @@ private final class FirstClickHostingView<Content: View>: NSHostingView<Content>
 private struct RecordingControlView: View {
     @ObservedObject var model: RecordingControlModel
     let shortcut: String
+    let pauseShortcut: String
     let onPause: () -> Void
     let onStop: () -> Void
 
@@ -72,37 +73,41 @@ private struct RecordingControlView: View {
                 .font(.lupaMono(13))
                 .foregroundColor(Palette.onInkText)
                 .frame(minWidth: 48, alignment: .leading)
-            // O botão inteiro recebe o clique (com .plain, só o desenho do ícone recebia).
+            // Só o ícone e o atalho; o botão inteiro recebe o clique.
             Button(action: onPause) {
                 HStack(spacing: 6) {
                     Image(systemName: model.paused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 11, weight: .bold))
-                    Text(model.paused ? "Retomar" : "Pausar").font(.lupaText(13, .bold))
+                        .font(.system(size: 12, weight: .bold))
+                    if !pauseShortcut.isEmpty {
+                        Text(pauseShortcut).font(.lupaMono(11)).opacity(0.75)
+                    }
                 }
                 .foregroundColor(model.paused ? Palette.inkDeep : Palette.paper)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 10)
                 .frame(height: 30)
                 .background(RoundedRectangle(cornerRadius: 8).fill(model.paused ? Palette.lime : Palette.inkRaised))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.inkBorder, lineWidth: 1))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help(model.paused ? "Retomar" : "Pausar")
             Button(action: onStop) {
                 HStack(spacing: 6) {
                     Image(systemName: "stop.fill").font(.system(size: 11, weight: .bold))
-                    Text("Parar").font(.lupaText(13, .bold))
                     if !shortcut.isEmpty {
-                        Text(shortcut).font(.lupaMono(11)).opacity(0.7)
+                        Text(shortcut).font(.lupaMono(11)).opacity(0.85)
                     }
                 }
                 .foregroundColor(.white)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 10)
                 .frame(height: 30)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Palette.danger))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help("Parar")
         }
+        .fixedSize()
         .foregroundColor(Palette.paper)
         .padding(.leading, 14)
         .padding(.trailing, 7)

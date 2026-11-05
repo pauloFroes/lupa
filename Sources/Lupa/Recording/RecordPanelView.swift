@@ -76,7 +76,7 @@ struct RecordPanelView: View {
                     .padding(.bottom, 10)
                 }
                 divider
-                toggleRow("Câmera em bolha", "Arraste a bolha para onde quiser.", isOn: $prefs.recording.camera)
+                toggleRow("Câmera em bolha", "Desvia do mouse e volta sozinha. Segure ⌥ para arrastar.", isOn: $prefs.recording.camera)
                 divider
                 toggleRow("Mostrar cliques", "Um anel marca cada clique no vídeo.", isOn: $prefs.recording.showClicks)
             }

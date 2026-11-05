@@ -19,7 +19,7 @@ enum MicrophoneError: LocalizedError {
 final class MicrophoneStream {
     static let sampleRate = 24_000.0
     var onAudio: ((Data) -> Void)?
-    // Nível de 0 a 1 do último bloco, para saber se há fala chegando.
+    // Nível RMS de 0 a 1 do último bloco, para saber se há fala chegando.
     private(set) var level: Float = 0
 
     private let engine = AVAudioEngine()
@@ -72,9 +72,13 @@ final class MicrophoneStream {
         }
         guard error == nil, output.frameLength > 0, let samples = output.int16ChannelData?[0] else { return }
         let count = Int(output.frameLength)
-        var peak: Int16 = 0
-        for index in 0 ..< count { peak = max(peak, samples[index] == .min ? .max : abs(samples[index])) }
-        level = Float(peak) / Float(Int16.max)
+        // RMS: o pico pega estalos e ruído; a média de energia separa melhor fala de silêncio.
+        var sum: Float = 0
+        for index in 0 ..< count {
+            let sample = Float(samples[index]) / Float(Int16.max)
+            sum += sample * sample
+        }
+        level = (sum / Float(count)).squareRoot()
         pending.append(Data(bytes: samples, count: count * 2))
         while pending.count >= chunkBytes {
             let chunk = pending.prefix(chunkBytes)

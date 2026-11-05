@@ -214,6 +214,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 live.setAutoZoom(true, level: prefs.initialZoom)
                 registerLiveHotKeys()
                 recording.liveZoomActive = true
+                // O Ao vivo já estava aberto (sem legenda): a gravação também liga a legenda.
+                if prefs.captions.onLive, !captions.isActive, let screen = live.screen {
+                    captionsStartedByLive = true
+                    captions.start(on: screen, area: recording.area)
+                }
             } else {
                 liveStartedByRecording = true
                 startLive()

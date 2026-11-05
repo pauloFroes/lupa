@@ -28,6 +28,8 @@ final class RealtimeTranscriber: NSObject, URLSessionWebSocketDelegate {
     private var session: URLSession?
     private var task: URLSessionWebSocketTask?
     private var closed = false
+    private var opened = false
+    private var seenTypes = Set<String>()
 
     func connect(key: String, language: String, keywords: [String]) {
         var request = URLRequest(url: URL(string: "wss://api.openai.com/v1/realtime?intent=transcription")!)
@@ -37,6 +39,8 @@ final class RealtimeTranscriber: NSObject, URLSessionWebSocketDelegate {
         self.session = session
         self.task = task
         closed = false
+        opened = false
+        seenTypes.removeAll()
         task.resume()
         var transcription: [String: Any] = ["model": Self.model, "delay": "low"]
         if !language.isEmpty { transcription["languages"] = [language] }
@@ -110,9 +114,12 @@ final class RealtimeTranscriber: NSObject, URLSessionWebSocketDelegate {
               let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = event["type"] as? String else { return }
         let item = event["item_id"] as? String ?? ""
+        // Cada tipo de evento aparece uma vez no log (Console, processo Lupa): mostra o que a
+        // OpenAI está mandando sem inundar o log com cada pedaço de texto.
+        if seenTypes.insert(type).inserted { NSLog("Lupa legenda: primeiro evento %@", type) }
         switch type {
         case "session.created", "session.updated", "transcription_session.created", "transcription_session.updated":
-            onOpen?()
+            markOpen()
         case "conversation.item.input_audio_transcription.delta":
             if let delta = event["delta"] as? String { onText?(item, delta, false) }
         case "conversation.item.input_audio_transcription.completed":
@@ -140,9 +147,22 @@ final class RealtimeTranscriber: NSObject, URLSessionWebSocketDelegate {
         onError?(error)
     }
 
+    private func markOpen() {
+        guard !opened else { return }
+        opened = true
+        onOpen?()
+    }
+
+    // O áudio pode seguir assim que o socket abre: o session.update já foi na frente, na mesma fila.
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+        NSLog("Lupa legenda: conectado à OpenAI")
+        markOpen()
+    }
+
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         guard !closed else { return }
         let text = reason.map { String(decoding: $0, as: UTF8.self) } ?? ""
+        NSLog("Lupa legenda: OpenAI fechou (%ld) %@", closeCode.rawValue, text)
         closed = true
         onError?(TranscriberError.closed(text.isEmpty ? "A OpenAI encerrou a transcrição (código \(closeCode.rawValue))." : text))
     }
@@ -150,7 +170,9 @@ final class RealtimeTranscriber: NSObject, URLSessionWebSocketDelegate {
     // Chave errada responde 401 no aperto de mão, antes de qualquer evento.
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard !closed else { return }
-        if let response = task.response as? HTTPURLResponse, response.statusCode == 401 {
+        let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
+        NSLog("Lupa legenda: conexão terminou (HTTP %ld) %@", status, error?.localizedDescription ?? "")
+        if status == 401 {
             closed = true
             onError?(TranscriberError.server("A OpenAI recusou a chave. Confira em Ajustes."))
         } else if let error {

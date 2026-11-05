@@ -36,6 +36,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private var initialZoom: CGFloat = 2
     private var hud: LiveHUDView?
     private let contentLayer = CALayer()
+    private var lastApplied: (CGFloat, CGPoint) = (0, CGPoint(x: -1, y: -1))
     static let zoomRange: ClosedRange<CGFloat> = 1 ... 8
     // Fração do trecho visível, em cada lado, que o cursor nunca invade por atraso da câmera.
     static let cursorMargin = 0.1
@@ -132,6 +133,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         hud = nil
         contentLayer.contents = nil
         contentLayer.removeFromSuperlayer()
+        lastApplied = (0, CGPoint(x: -1, y: -1))
         onStop?()
     }
 
@@ -409,12 +411,18 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         let position = cursor?.position ?? cursorPoint(in: frame)
         let point = CGPoint(x: position.x.clamped(0, frame.width), y: position.y.clamped(0, frame.height))
         let origin = CGPoint(x: cameraX.value, y: cameraY.value)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        contentLayer.anchorPoint = .zero
-        contentLayer.position = CGPoint(x: -origin.x * zoom, y: -origin.y * zoom)
-        contentLayer.transform = CATransform3DMakeScale(zoom, zoom, 1)
-        CATransaction.commit()
+        // Parado, a camada da tela inteira não é tocada: cada mudança nela faz o WindowServer
+        // recompor a tela toda, e isso, 60 vezes por segundo, aquece o Mac à toa.
+        let applied = (zoom, origin)
+        if lastApplied.0 != applied.0 || lastApplied.1 != applied.1 {
+            lastApplied = applied
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            contentLayer.anchorPoint = .zero
+            contentLayer.position = CGPoint(x: -origin.x * zoom, y: -origin.y * zoom)
+            contentLayer.transform = CATransform3DMakeScale(zoom, zoom, 1)
+            CATransaction.commit()
+        }
         // Com a câmera atrasada na mola, o ponto real pode cair um instante fora do trecho visível.
         cursor?.place(at: CGPoint(
             x: ((point.x - origin.x) * zoom).clamped(0, frame.width),

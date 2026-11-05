@@ -16,7 +16,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
 
     private var window: OverlayWindow?
     private var stream: SCStream?
-    private var screen: NSScreen?
+    private(set) var screen: NSScreen?
     private var displayLink: CADisplayLink?
     private var lastTimestamp: CFTimeInterval?
     private enum Phase { case waitingForFrame, entering, live, leaving }
@@ -51,6 +51,21 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private var lastActivity: CFTimeInterval = 0
     private var lastMouse = CGPoint.zero
     static let autoZoomIdle: CFTimeInterval = 2.5
+
+    // Desenho ao vivo: a imagem continua chegando, mas a câmera e o zoom param onde estão, para o
+    // traço ficar sobre o mesmo ponto do conteúdo. O cursor desenhado some (a caneta é o cursor).
+    private(set) var drawing = false
+    var isLive: Bool { isActive && phase == .live }
+
+    func setDrawing(_ on: Bool) {
+        guard isActive, on != drawing else { return }
+        drawing = on
+        if !on {
+            lastActivity = CACurrentMediaTime()
+            lastMouse = NSEvent.mouseLocation
+            if let screen { cursor?.jump(to: cursorPoint(in: screen.frame)) }
+        }
+    }
 
     func start(on screen: NSScreen, zoom initialZoom: CGFloat, autoZoom: Bool = false) async throws {
         // A janela vazia entra na tela antes do filtro, então a Lupa com certeza está na lista
@@ -97,6 +112,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
             return
         }
         isActive = false
+        drawing = false
         phase = .waitingForFrame
         stopClickMonitors()
         autoZoom = false
@@ -120,7 +136,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func adjust(by factor: CGFloat) {
-        guard isActive, phase == .live else { return }
+        guard isActive, phase == .live, !drawing else { return }
         var next = targetZoom * factor
         // Só ao diminuir: a pinça sobe em passos pequenos e ficaria presa em 1× se isto valesse na subida.
         if factor < 1, next < 1.1 { next = 1 }
@@ -171,7 +187,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
 
     // O clique aproxima em torno do cursor: o ponto clicado fica sob ele e a câmera o centraliza.
     private func handleClick() {
-        guard isActive, autoZoom, phase == .live, let screen,
+        guard isActive, autoZoom, !drawing, phase == .live, let screen,
               NSMouseInRect(NSEvent.mouseLocation, screen.frame, false) else { return }
         lastActivity = CACurrentMediaTime()
         guard targetZoom < autoZoomLevel else { return }
@@ -200,7 +216,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func reset() {
-        guard isActive, phase == .live else { return }
+        guard isActive, phase == .live, !drawing else { return }
         targetZoom = initialZoom
         logZoom.target = log(Double(targetZoom))
         hud?.show(zoom: targetZoom)
@@ -323,7 +339,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
                 SystemCursor.show()
             }
         }
-        let point = cursor?.step(toward: target, visible: onScreen) ?? target
+        let point = cursor?.step(toward: target, visible: onScreen && !drawing) ?? target
         let elapsed = max(0, now - phaseStart)
         let progress = min(1, elapsed / Self.transitionDuration)
         let eased = Self.easeInOut(progress)
@@ -341,6 +357,10 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
             setChrome(opacity: min(1, elapsed / Self.fadeDuration))
             if progress >= 1 { phase = .live }
         case .live:
+            if drawing {
+                cursor?.place(at: point)
+                return
+            }
             if autoZoom { updateAutoZoom() }
             let previousZoom = exp(logZoom.value)
             logZoom.step(dt)

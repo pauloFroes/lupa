@@ -17,7 +17,10 @@ final class ZoomDrawView: NSView, NSTextInputClient {
 
     var onExit: (() -> Void)?
 
-    private let snapshot: NSImage
+    // Sem foto é o desenho ao vivo: a view é transparente sobre a tela (ou o Ao vivo) que continua
+    // mexendo, e o desenho entra na gravação. Nele não aparece nenhuma instrução de comandos.
+    private let snapshot: NSImage?
+    var isLive: Bool { snapshot == nil }
     private(set) var mode: Mode
     private var zoom: CGFloat = 1
     private var targetZoom: CGFloat
@@ -59,8 +62,8 @@ final class ZoomDrawView: NSView, NSTextInputClient {
 
     private static let blankCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
 
-    init(frame: NSRect, snapshot: CGImage, mode: Mode, initialZoom: CGFloat, penIndex: Int, mouse: CGPoint) {
-        self.snapshot = NSImage(cgImage: snapshot, size: frame.size)
+    init(frame: NSRect, snapshot: CGImage?, mode: Mode, initialZoom: CGFloat, penIndex: Int, mouse: CGPoint) {
+        self.snapshot = snapshot.map { NSImage(cgImage: $0, size: frame.size) }
         self.mode = mode
         targetZoom = mode == .zoom ? initialZoom : 1
         anchor = mouse
@@ -69,7 +72,7 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         super.init(frame: frame)
         if mode == .draw {
             frozenSource = bounds
-            helpVisible = true
+            helpVisible = self.snapshot != nil
         }
         showHUD(full: true)
     }
@@ -78,7 +81,7 @@ final class ZoomDrawView: NSView, NSTextInputClient {
     required init?(coder: NSCoder) { nil }
 
     override var acceptsFirstResponder: Bool { true }
-    override var isOpaque: Bool { true }
+    override var isOpaque: Bool { snapshot != nil }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func viewDidMoveToWindow() {
@@ -120,7 +123,7 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         frozenSource = sourceRect()
         mode = .draw
         enteredFromZoom = fromZoom
-        helpVisible = true
+        helpVisible = !isLive
         updateCursor()
         showHUD(full: true)
     }
@@ -178,8 +181,13 @@ final class ZoomDrawView: NSView, NSTextInputClient {
     override func draw(_ dirtyRect: NSRect) {
         switch board {
         case .screen:
-            NSGraphicsContext.current?.imageInterpolation = .high
-            snapshot.draw(in: bounds, from: sourceRect(), operation: .copy, fraction: 1)
+            if let snapshot {
+                NSGraphicsContext.current?.imageInterpolation = .high
+                snapshot.draw(in: bounds, from: sourceRect(), operation: .copy, fraction: 1)
+            } else {
+                NSColor.clear.set()
+                dirtyRect.fill(using: .copy)
+            }
         case .white:
             Theme.paper50.setFill()
             bounds.fill()
@@ -235,6 +243,7 @@ final class ZoomDrawView: NSView, NSTextInputClient {
     }
 
     private func drawHUD() {
+        guard !isLive else { return }
         let maxWidth = bounds.width - 32
         let alpha = HUD.fadeAlpha(until: hudUntil)
         switch mode {
@@ -536,8 +545,8 @@ final class ZoomDrawView: NSView, NSTextInputClient {
             } else if let previous = history.popLast() {
                 shapes = previous
             }
-        case "c": copyImage()
-        case "s": saveImage()
+        case "c" where !isLive: copyImage()
+        case "s" where !isLive: saveImage()
         default: return
         }
         needsDisplay = true
@@ -576,7 +585,7 @@ final class ZoomDrawView: NSView, NSTextInputClient {
         case "w": board = board == .white ? .screen : .white
         case "k": board = board == .black ? .screen : .black
         case "t": startText()
-        case "h": helpVisible.toggle()
+        case "h" where !isLive: helpVisible.toggle()
         default: return
         }
         needsDisplay = true

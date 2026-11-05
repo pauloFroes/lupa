@@ -38,6 +38,7 @@ O painel do `⌃5` escolhe tela inteira ou uma área (arraste para marcar), som 
 - **Qualidade:** Alta (HEVC), Compatível (H.264) ou Máxima (ProRes 422, arquivos grandes, para editar).
 - **Arquivo:** `.mov` em `Filmes › Lupa`, com quadros constantes (a tela parada não encurta o vídeo) e o som do sistema e o microfone em faixas separadas.
 - Zoom, desenho e zoom ao vivo entram no vídeo: dá para aproximar e anotar enquanto grava.
+- **Desenho ao vivo:** gravando (ou no `⌃4`), o `⌃2` desenha sobre a tela que continua mexendo, sem congelar a imagem; o traço entra no vídeo junto com o que acontece embaixo. O zoom fica parado onde está enquanto você desenha, e nenhuma instrução de comandos aparece. `esc` ou `⌃2` de novo apaga o desenho e devolve o mouse aos apps.
 - Ainda não há editor de linha do tempo; para cortar o começo e o fim, abra o arquivo no QuickTime Player (`⌘T`).
 
 Os atalhos mudam em **Ajustes…** (`⌘,` com o menu aberto), junto com o zoom inicial, a cor inicial da caneta, o tamanho e a suavidade do cursor no zoom ao vivo e a duração do intervalo.

@@ -158,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         } else {
             if liveStartedByRecording {
+                if zoomView?.isLive == true { closeOverlay() }
                 live.stop(animated: true)
             } else if live.isActive {
                 live.setAutoZoom(false, level: prefs.initialZoom)
@@ -293,13 +294,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .draw:
             if let view = zoomView {
                 if view.mode == .zoom { view.switchToDraw() } else { closeOverlay() }
+            } else if live.isLive {
+                startLiveDraw()
             } else {
                 startOverlay(.draw)
             }
         case .breakTimer:
             if breakView != nil { closeBreak() } else { startBreak() }
         case .liveZoom:
-            if live.isActive { live.stop(animated: true) } else { startLive() }
+            if live.isActive {
+                if zoomView?.isLive == true { closeOverlay() }
+                live.stop(animated: true)
+            } else {
+                startLive()
+            }
         case .record:
             recording.toggle()
         }
@@ -323,7 +331,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func presentOverlay(image: CGImage, screen: NSScreen, mode: ZoomDrawView.Mode) {
+    // Desenho ao vivo: uma janela transparente sobre o Ao vivo, que continua recebendo a tela (vídeo
+    // tocando, cursor de digitação, tudo). A gravação pega o Ao vivo e o desenho juntos.
+    private func startLiveDraw() {
+        guard let screen = live.screen else { return }
+        // Os atalhos do Ao vivo (esc, ⌃+, ⌃-) e a pinça ficam com o desenho enquanto ele estiver aberto.
+        unregisterLiveHotKeys()
+        live.setDrawing(true)
+        rememberFrontApp()
+        presentOverlay(image: nil, screen: screen, mode: .draw)
+        overlayWindow?.ignoresMouseEvents = false
+    }
+
+    private func presentOverlay(image: CGImage?, screen: NSScreen, mode: ZoomDrawView.Mode) {
         let window = OverlayWindow(screen: screen)
         let mouse = NSEvent.mouseLocation
         let local = CGPoint(x: mouse.x - screen.frame.minX, y: mouse.y - screen.frame.minY)
@@ -349,11 +369,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func closeOverlay() {
         guard let window = overlayWindow else { return }
+        let wasLive = zoomView?.isLive == true
         zoomView?.stop()
         window.orderOut(nil)
         overlayWindow = nil
         zoomView = nil
         restoreFrontApp()
+        if wasLive, live.isActive {
+            live.setDrawing(false)
+            registerLiveHotKeys()
+        }
     }
 
     private func startBreak() {

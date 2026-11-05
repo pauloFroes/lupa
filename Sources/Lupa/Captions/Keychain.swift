@@ -31,7 +31,9 @@ enum Keychain {
         ]
         var withAccess = attributes
         if let access = openAccess() { withAccess[kSecAttrAccess as String] = access }
-        return SecItemAdd(withAccess as CFDictionary, nil) == errSecSuccess
+        if SecItemAdd(withAccess as CFDictionary, nil) == errSecSuccess { return true }
+        // Sem a ACL liberada a gravação ainda vale: a chave nunca fica perdida entre apagar e gravar.
+        return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
     }
 
     // Escolha do Paulo (2026-11-05): leitura liberada, sem pedir a senha do Mac. A assinatura local

@@ -341,11 +341,24 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     func show() {
         if window == nil {
-            let host = NSHostingController(rootView: SettingsView(prefs: .shared, recorder: recorder))
+            let content = SettingsView(prefs: .shared, recorder: recorder)
+            // A altura natural dos Ajustes passa da tela num notebook: a janela fica do tamanho
+            // que cabe e o conteúdo rola. Pode ser esticada até a altura natural.
+            let probe = NSHostingView(rootView: content)
+            let natural = probe.fittingSize
+            let host = NSHostingController(rootView: ScrollView { content }.background(Palette.paper))
+            host.sizingOptions = []
             let window = NSWindow(contentViewController: host)
             window.title = "Ajustes da Lupa"
-            window.styleMask = [.titled, .closable]
+            window.styleMask = [.titled, .closable, .resizable]
             window.backgroundColor = Theme.paper100
+            // Os Ajustes são desenhados em papel claro: com o Mac no modo escuro, campos e menus
+            // nativos ficariam escuros (texto branco no fundo claro).
+            window.appearance = NSAppearance(named: .aqua)
+            let available = (NSScreen.main?.visibleFrame.height ?? 800) - 80
+            window.setContentSize(NSSize(width: natural.width, height: min(natural.height, available)))
+            window.contentMinSize = NSSize(width: natural.width, height: min(360, natural.height))
+            window.contentMaxSize = NSSize(width: natural.width, height: natural.height)
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.center()

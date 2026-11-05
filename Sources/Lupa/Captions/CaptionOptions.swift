@@ -51,4 +51,20 @@ struct CaptionOptions: Codable, Equatable {
     var saveTranscript = true
     // Termos que a transcrição deve acertar (nomes, siglas), passados como dica ao modelo.
     var vocabulary = ""
+    // Revisor: um modelo de texto rápido corrige palavras e pontuação de cada frase já fechada.
+    var review = true
+
+    init() {}
+
+    // Campo novo não pode zerar os ajustes já salvos: o que faltar fica no padrão.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let base = CaptionOptions()
+        onLive = try c.decodeIfPresent(Bool.self, forKey: .onLive) ?? base.onLive
+        language = try c.decodeIfPresent(String.self, forKey: .language) ?? base.language
+        size = try c.decodeIfPresent(Size.self, forKey: .size) ?? base.size
+        saveTranscript = try c.decodeIfPresent(Bool.self, forKey: .saveTranscript) ?? base.saveTranscript
+        vocabulary = try c.decodeIfPresent(String.self, forKey: .vocabulary) ?? base.vocabulary
+        review = try c.decodeIfPresent(Bool.self, forKey: .review) ?? base.review
+    }
 }

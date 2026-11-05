@@ -24,7 +24,8 @@ final class CaptionController {
     private static let silenceToCommit: TimeInterval = 0.6
     private static let maxTurn: TimeInterval = 12
     private var noiseFloor: Float = 0.004
-    private var stats = (chunks: 0, commits: 0, deltas: 0, finals: 0)
+    private var stats = (chunks: 0, commits: 0, deltas: 0, finals: 0, revisions: 0)
+    private let reviser = CaptionReviser()
     private var statsTimer: Timer?
     private var speaking = false
     private var turnStart: Date?
@@ -85,7 +86,7 @@ final class CaptionController {
         let transcriber = transcriber
         self.transcriber = nil
         // Um respiro para o último trecho chegar antes de fechar a conexão e salvar.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
             transcriber?.close()
             self?.saveTranscript()
         }
@@ -111,7 +112,7 @@ final class CaptionController {
         order.removeAll()
         segments.removeAll()
         retries = 0
-        stats = (0, 0, 0, 0)
+        stats = (0, 0, 0, 0, 0)
         noiseFloor = 0.004
         speaking = false
         turnStart = nil
@@ -138,8 +139,8 @@ final class CaptionController {
         // A cada 5 s, uma linha no log com o que está passando: áudio, trechos e texto.
         let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
             guard let self else { return }
-            NSLog("Lupa legenda: %ld blocos, %ld trechos, %ld pedaços, %ld finais, ruído %.4f, conectada %@",
-                  stats.chunks, stats.commits, stats.deltas, stats.finals, noiseFloor, ready ? "sim" : "não")
+            NSLog("Lupa legenda: %ld blocos, %ld trechos, %ld pedaços, %ld finais, %ld revisadas, ruído %.4f, conectada %@",
+                  stats.chunks, stats.commits, stats.deltas, stats.finals, stats.revisions, noiseFloor, ready ? "sim" : "não")
         }
         RunLoop.main.add(timer, forMode: .common)
         statsTimer = timer
@@ -277,6 +278,24 @@ final class CaptionController {
         segment.recordingEnd = recordingClock() ?? segment.recordingStart
         segments[item] = segment
         refresh()
+        if final { revise(item: item, text: segment.text) }
+    }
+
+    // A frase fechada vai ao revisor; se ela ainda for a mesma quando a revisão chegar, é trocada.
+    private func revise(item: String, text: String) {
+        let options = prefs.captions
+        guard options.review, !text.isEmpty, let key = OpenAIKey.value else { return }
+        let context = order.prefix(while: { $0 != item }).suffix(2).compactMap { segments[$0]?.text }
+        let reviser = reviser
+        Task { @MainActor [weak self] in
+            guard let revised = await reviser.review(
+                text, context: context, vocabulary: options.vocabulary, language: options.language, key: key
+            ) else { return }
+            guard let self, self.segments[item]?.text == text else { return }
+            self.segments[item]?.text = revised
+            self.stats.revisions += 1
+            self.refresh()
+        }
     }
 
     private func refresh() {

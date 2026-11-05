@@ -436,6 +436,9 @@ struct CaptionSettings: View {
             toggleRow("Ligar ao entrar no Ao vivo", "Vale também para a gravação. A qualquer momento, \(prefs.shortcuts[.captions]?.displayString ?? "o atalho") liga e desliga.", isOn: prefs.captions.onLive) {
                 prefs.captions.onLive.toggle()
             }
+            toggleRow("Revisar palavras e pontuação", "Um segundo modelo corrige cada frase logo depois de fechada, sem atrasar a legenda.", isOn: prefs.captions.review) {
+                prefs.captions.review.toggle()
+            }
             toggleRow("Salvar a transcrição", "Texto em Filmes › Lupa › Transcrições e, na gravação, legenda .srt ao lado do vídeo.", isOn: prefs.captions.saveTranscript) {
                 prefs.captions.saveTranscript.toggle()
             }

@@ -118,6 +118,7 @@ final class CaptionController {
         model.notice = nil
         model.fontSize = prefs.captions.size.points
         model.text = ""
+        model.pending = ""
         move(to: screen, area: area)
         window.orderFrontRegardless()
         connect(key: key)
@@ -280,17 +281,26 @@ final class CaptionController {
 
     private func refresh() {
         guard isActive, model.notice == nil else { return }
-        // As últimas falas, cortadas pelo começo para caber em duas linhas.
-        let recent = order.suffix(3).compactMap { segments[$0]?.text }.filter { !$0.isEmpty }
-        let joined = recent.joined(separator: " ")
-        let limit = Int(2 * (window.frame.width - 44) / (model.fontSize * 0.52))
-        model.text = Self.tail(joined, limit: max(40, limit))
-        model.visible = !model.text.isEmpty
+        // As últimas falas, cortadas pelo começo para caber em duas linhas; o que ainda está sendo
+        // dito fica separado, para aparecer em tom mais apagado até a OpenAI fechar o trecho.
+        let recent = order.suffix(3).compactMap { segments[$0] }.filter { !$0.text.isEmpty }
+        let finished = recent.filter(\.final).map(\.text).joined(separator: " ")
+        let pending = recent.filter { !$0.final }.map(\.text).joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+        let joined = [finished, pending].filter { !$0.isEmpty }.joined(separator: " ")
+        let usable = window.frame.width - 48 - model.fontSize * 1.6
+        let limit = max(40, Int(2 * usable / (model.fontSize * 0.54)))
+        let shown = Self.tail(joined, limit: limit)
+        let pendingShown = String(pending.suffix(min(pending.count, shown.count)))
+        model.pending = pendingShown
+        model.text = String(shown.dropLast(pendingShown.count)).trimmingCharacters(in: .whitespaces)
+        model.visible = !shown.isEmpty
         hideTimer?.invalidate()
         // Em silêncio, a legenda some depois de alguns segundos.
         let timer = Timer(timeInterval: 4, repeats: false) { [weak self] _ in
             self?.model.visible = false
             self?.model.text = ""
+            self?.model.pending = ""
         }
         RunLoop.main.add(timer, forMode: .common)
         hideTimer = timer

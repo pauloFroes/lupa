@@ -17,15 +17,31 @@ final class RecordingController {
     }
 
     private(set) var state: State = .idle {
-        didSet { onChange?() }
+        didSet {
+            updateControlBar()
+            onChange?()
+        }
     }
 
     var onChange: (() -> Void)?
+    // Tela gravada, para o Ao vivo abrir nela.
+    private(set) var screen: NSScreen?
+    // Área gravada, em pontos da tela (nil = tela inteira): a legenda fica dentro dela.
+    private(set) var area: CGRect?
+    var onStarted: (() -> Void)?
+    var onFinished: ((URL, TimeInterval) -> Void)?
+    var isRecording: Bool { state == .recording || state == .paused }
+    var liveZoomActive = false {
+        didSet { recorder?.setLiveCursor(liveZoomActive) }
+    }
     var shortcutLabel: () -> String = { "" }
+    var pauseShortcutLabel: () -> String = { "" }
 
     private let prefs = Preferences.shared
     private let camera = CameraBubble()
     private var recorder: ScreenRecorder?
+    private let controlBar = RecordingControlBar()
+    private var controlTimer: Timer?
     private var panel: NSPanel?
     private var donePanel: NSPanel?
     private var selectorWindow: OverlayWindow?
@@ -176,7 +192,7 @@ final class RecordingController {
 
     private func selectArea(on screen: NSScreen) {
         let window = OverlayWindow(screen: screen)
-        let view = AreaSelectorView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        let view = AreaSelectorView(frame: NSRect(origin: .zero, size: screen.frame.size), previous: prefs.recording.lastArea)
         view.onFinish = { [weak self] rect in
             self?.selectorWindow?.orderOut(nil)
             self?.selectorWindow = nil
@@ -184,6 +200,7 @@ final class RecordingController {
                 self?.cancelPreparation()
                 return
             }
+            if rect != view.bounds { self?.prefs.recording.lastArea = rect }
             self?.countdown(screen: screen, area: rect == view.bounds ? nil : rect)
         }
         window.contentView = view
@@ -194,7 +211,10 @@ final class RecordingController {
     }
 
     private func countdown(screen: NSScreen, area: CGRect?) {
-        if prefs.recording.camera { try? camera.show(on: screen) }
+        if prefs.recording.camera {
+            camera.onMove = { [weak self] origin in self?.prefs.recording.cameraOrigin = origin }
+            try? camera.show(on: screen, at: prefs.recording.cameraOrigin)
+        }
         let window = OverlayWindow(screen: screen)
         window.ignoresMouseEvents = true
         let view = CountdownView(frame: NSRect(origin: .zero, size: screen.frame.size))
@@ -242,13 +262,27 @@ final class RecordingController {
         recorder.onFailure = { [weak self] error in self?.fail(error) }
         self.recorder = recorder
         let options = prefs.recording
+        controlBar.show(
+            on: screen,
+            shortcut: shortcutLabel(),
+            pauseShortcut: pauseShortcutLabel(),
+            onPause: { [weak self] in self?.togglePause() },
+            onStop: { [weak self] in self?.stop() }
+        )
+        let excluded = controlBar.windowID.map { [$0] } ?? []
         Task { @MainActor in
             do {
-                try await recorder.start(screen: screen, area: area, options: options)
+                // Um respiro para o macOS listar a barra antes do filtro que a exclui.
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                try await recorder.start(screen: screen, area: area, options: options, excluding: excluded)
+                recorder.setLiveCursor(self.liveZoomActive)
+                self.screen = screen
+                self.area = area
                 self.startedAt = Date()
                 self.pausedAt = nil
                 self.pausedTotal = 0
                 self.state = .recording
+                self.onStarted?()
             } catch {
                 self.fail(error)
             }
@@ -266,6 +300,7 @@ final class RecordingController {
                 self.camera.hide()
                 self.resetClock()
                 self.state = .idle
+                self.onFinished?(url, duration)
                 self.showDonePanel(url: url, duration: duration)
             } catch {
                 self.fail(error)
@@ -286,6 +321,26 @@ final class RecordingController {
             alert.messageText = "a gravação parou"
             alert.informativeText = error.localizedDescription
             alert.runModal()
+        }
+    }
+
+    private func updateControlBar() {
+        controlTimer?.invalidate()
+        controlTimer = nil
+        switch state {
+        case .recording, .paused:
+            controlBar.model.paused = state == .paused
+            controlBar.model.time = Self.format(elapsed)
+            let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                self.controlBar.model.time = Self.format(self.elapsed)
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            controlTimer = timer
+        case .idle:
+            controlBar.hide()
+        case .preparing:
+            if recorder == nil { controlBar.hide() }
         }
     }
 
@@ -322,7 +377,7 @@ final class RecordingController {
         panel.setFrameOrigin(CGPoint(x: screen.maxX - panel.frame.width - 24, y: screen.maxY - panel.frame.height - 16))
         panel.orderFrontRegardless()
         donePanel = panel
-        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self, weak panel] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self, weak panel] in
             if let panel, self?.donePanel === panel { self?.closeDonePanel() }
         }
     }

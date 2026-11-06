@@ -76,9 +76,17 @@ struct RecordPanelView: View {
                     .padding(.bottom, 10)
                 }
                 divider
-                toggleRow("Câmera em bolha", "Arraste a bolha para onde quiser.", isOn: $prefs.recording.camera)
+                toggleRow("Câmera em bolha", "Desvia do mouse e volta sozinha. Segure ⌥ para arrastar.", isOn: $prefs.recording.camera)
                 divider
                 toggleRow("Mostrar cliques", "Um anel marca cada clique no vídeo.", isOn: $prefs.recording.showClicks)
+                divider
+                toggleRow(
+                    "Legenda ao vivo",
+                    OpenAIKey.isSet
+                        ? "Sua fala em texto na tela, em \(CaptionLanguage.named(prefs.captions.language).lowercased()); salva um .srt."
+                        : "Cadastre a chave da OpenAI em Ajustes para ligar.",
+                    isOn: $prefs.captions.onLive
+                )
             }
             .padding(.horizontal, 14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Palette.inkRaised))
@@ -193,6 +201,9 @@ struct RecordingDoneView: View {
                 .foregroundColor(Palette.onInkMuted)
                 .accessibilityLabel("Fechar")
             }
+            Text("salvo em Filmes › Lupa")
+                .font(.lupaText(13))
+                .foregroundColor(Palette.onInkMuted)
             Text(fileName)
                 .font(.lupaMono(12))
                 .foregroundColor(Palette.onInkText)

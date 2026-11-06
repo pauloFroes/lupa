@@ -28,6 +28,10 @@ struct RecordingOptions: Codable, Equatable {
     var showClicks = true
     var quality: Quality = .hevc
     var framesPerSecond = 60
+    // Última área escolhida e último lugar da bolha da câmera, em pontos da tela (origem embaixo
+    // à esquerda); voltam na próxima gravação.
+    var lastArea: CGRect?
+    var cameraOrigin: CGPoint?
 }
 
 enum RecordingError: LocalizedError {
@@ -58,6 +62,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var systemAudioInput: AVAssetWriterInput?
     private var microphoneInput: AVAssetWriterInput?
     private var fillTimer: DispatchSourceTimer?
+    private var configuration: SCStreamConfiguration?
+    private var showsClicks = false
 
     private var frameDuration = CMTime(value: 1, timescale: 60)
     private var sessionStarted = false
@@ -71,14 +77,16 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
     // MARK: - Ciclo
 
-    func start(screen: NSScreen, area: CGRect?, options: RecordingOptions) async throws {
+    func start(screen: NSScreen, area: CGRect?, options: RecordingOptions, excluding windowIDs: [CGWindowID] = []) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         let displayID = ScreenCapture.displayID(of: screen)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw RecordingError.displayNotFound
         }
-        // Nada da Lupa fica de fora: zoom, desenho, bolha da câmera e zoom ao vivo entram no vídeo.
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        // Zoom, desenho, bolha da câmera e zoom ao vivo entram no vídeo.
+        // Só a barra de controle da gravação fica de fora.
+        let excluded = content.windows.filter { windowIDs.contains($0.windowID) }
+        let filter = SCContentFilter(display: display, excludingWindows: excluded)
         let configuration = Self.configuration(screen: screen, area: area, options: options)
         let url = try Self.makeOutputURL()
         try setUpWriter(url: url, configuration: configuration, options: options)
@@ -93,7 +101,18 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         try await stream.startCapture()
         self.stream = stream
+        self.configuration = configuration
+        showsClicks = options.showClicks
         startFillTimer()
+    }
+
+    // No Ao vivo a Lupa desenha o próprio cursor, ampliado e no lugar certo da imagem; o do sistema
+    // e o círculo do clique cairiam no ponto real, fora do zoom.
+    func setLiveCursor(_ live: Bool) {
+        guard let stream, let configuration else { return }
+        configuration.showsCursor = !live
+        configuration.showMouseClicks = !live && showsClicks
+        Task { try? await stream.updateConfiguration(configuration) }
     }
 
     func pause() {
@@ -162,9 +181,14 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         max(2, Int(value) & ~1)
     }
 
+    // ~/Filmes/Lupa
+    static var folder: URL {
+        FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Lupa", isDirectory: true)
+    }
+
     private static func makeOutputURL() throws -> URL {
-        let movies = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
-        let folder = movies.appendingPathComponent("Lupa", isDirectory: true)
+        let folder = Self.folder
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'às' HH.mm.ss"

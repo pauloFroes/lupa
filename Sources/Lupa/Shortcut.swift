@@ -7,6 +7,7 @@ enum Action: String, CaseIterable, Identifiable, Codable {
     case breakTimer
     case liveZoom
     case record
+    case captions
 
     var id: String { rawValue }
 
@@ -17,6 +18,7 @@ enum Action: String, CaseIterable, Identifiable, Codable {
         case .breakTimer: "Intervalo"
         case .liveZoom: "Zoom ao vivo"
         case .record: "Gravar tela"
+        case .captions: "Legenda ao vivo"
         }
     }
 
@@ -27,6 +29,7 @@ enum Action: String, CaseIterable, Identifiable, Codable {
         case .breakTimer: kVK_ANSI_3
         case .liveZoom: kVK_ANSI_4
         case .record: kVK_ANSI_5
+        case .captions: kVK_ANSI_6
         }
         return Shortcut(keyCode: UInt32(key), modifiers: NSEvent.ModifierFlags.control.rawValue)
     }

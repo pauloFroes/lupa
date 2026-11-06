@@ -13,20 +13,22 @@ A Lupa fica na barra de menus do Mac, sem ícone no Dock, e entra em ação com 
 
 | Atalho | Modo | Como usar |
 | --- | --- | --- |
-| `⌃1` | Zoom | Congela a tela e aproxima em torno do cursor. Role ou use `↑` `↓` para mudar o zoom; mova o mouse para navegar. Clique para desenhar ali mesmo; `esc` sai. |
+| `⌃1` | Zoom | Congela a tela e aproxima em torno do cursor. Role, faça a pinça no trackpad ou use `↑` `↓` (ou `+` `-`) para mudar o zoom; mova o mouse para navegar. Clique para desenhar ali mesmo; `esc` sai. |
 | `⌃2` | Desenhar | Desenha sobre a tela congelada (ou sobre o zoom, se você veio do `⌃1`). |
 | `⌃3` | Intervalo | Cronômetro em tela cheia. `↑` `↓` somam ou tiram 1 minuto, `espaço` pausa, `esc` volta à apresentação. |
-| `⌃4` | Zoom ao vivo | Zoom que acompanha o cursor enquanto você usa os apps; o clique vai para o app embaixo. `⌃=` e `⌃-` mudam o zoom. |
+| `⌃4` | Zoom ao vivo | Zoom que acompanha o cursor enquanto você usa os apps; o clique vai para o app embaixo. A pinça no trackpad, `⌃` + rolar e `⌃+` (ou `⌃=`) e `⌃-` mudam o zoom, entre 1× e 8×; em 1× o modo continua ligado, com o cursor animado; `⌃0` volta ao zoom inicial; `esc` ou `⌃4` sai. O selo mostra o nível atual. O zoom e o deslocamento andam por física de mola, sincronizados com a tela (até 120 Hz), e a entrada e a saída são animadas. O cursor fica maior e desliza com movimento suave, inclina ao andar e afunda no clique; tamanho e suavidade mudam em Ajustes. A imagem acompanha o cursor o tempo todo e chega à borda do monitor antes dele; encostada, ela para e só o cursor anda. |
 | `⌃5` | Gravar tela | Abre o painel de gravação; com a gravação rodando, o mesmo atalho para. |
 
 ### No desenho
 
 - **Cores:** `R` vermelho, `G` verde, `B` azul, `O` laranja, `Y` amarelo, `P` rosa. Com `⇧`, a cor vira marca-texto.
-- **Formas, segurando a tecla enquanto arrasta:** `⇧` linha, `⌃` (ou `⌘`) retângulo, `⌥` elipse, `⌃⇧` seta.
+- **Formas:** `1` caneta, `2` linha, `3` retângulo, `4` elipse, `5` seta; a forma escolhida vale até você trocar. Também dá para segurar a tecla enquanto arrasta: `⇧` linha, `⌃` (ou `⌘`) retângulo, `⌥` elipse, `⌃⇧` seta. Pode soltar a tecla antes do mouse: a forma fica. O rótulo da barra mostra a forma da tecla segurada antes de você arrastar.
 - **Texto:** `T` escreve onde está o cursor (acentos funcionam); `esc` termina o texto.
-- **Espessura:** role o mouse (no texto, muda o tamanho da letra).
-- **Quadro:** `W` branco, `K` preto, `E` apaga tudo, `⌘Z` desfaz.
+- **Espessura:** role o mouse ou faça a pinça (no texto, a rolagem muda o tamanho da letra).
+- **Apagar:** `X` liga a borracha (clique ou arraste sobre um traço, forma ou texto para apagar só ele; `X` de novo ou uma cor volta à caneta). Com `⌥⌘`, um clique apaga um item sem trocar de ferramenta. `E` apaga tudo, e `⌘Z` desfaz, inclusive a borracha.
+- **Quadro:** `W` branco, `K` preto.
 - **Guardar:** `⌘C` copia a imagem; `⌘S` salva um PNG na Mesa.
+- **Comandos:** ao entrar no desenho, a Lupa mostra os comandos por tipo de elemento (formas, texto e cor, quadro). Eles somem no primeiro traço; `H` mostra e esconde.
 - Clique direito volta do desenho para o zoom; `esc` sai de tudo.
 
 ### Na gravação
@@ -36,9 +38,10 @@ O painel do `⌃5` escolhe tela inteira ou uma área (arraste para marcar), som 
 - **Qualidade:** Alta (HEVC), Compatível (H.264) ou Máxima (ProRes 422, arquivos grandes, para editar).
 - **Arquivo:** `.mov` em `Filmes › Lupa`, com quadros constantes (a tela parada não encurta o vídeo) e o som do sistema e o microfone em faixas separadas.
 - Zoom, desenho e zoom ao vivo entram no vídeo: dá para aproximar e anotar enquanto grava.
+- **Desenho ao vivo:** gravando (ou no `⌃4`), o `⌃2` desenha sobre a tela que continua mexendo, sem congelar a imagem; o traço entra no vídeo junto com o que acontece embaixo. O zoom fica parado onde está enquanto você desenha, e nenhuma instrução de comandos aparece. `esc` ou `⌃2` de novo apaga o desenho e devolve o mouse aos apps.
 - Ainda não há editor de linha do tempo; para cortar o começo e o fim, abra o arquivo no QuickTime Player (`⌘T`).
 
-Os atalhos mudam em **Ajustes…** (`⌘,` com o menu aberto), junto com o zoom inicial, a cor inicial da caneta e a duração do intervalo.
+Os atalhos mudam em **Ajustes…** (`⌘,` com o menu aberto), junto com o zoom inicial, a cor inicial da caneta, o tamanho e a suavidade do cursor no zoom ao vivo e a duração do intervalo.
 
 > `⌃1` a `⌃5` coincidem com "Ir para a Mesa 1…5" do Controle de Missão quando esses atalhos estão ligados em Ajustes do Sistema › Teclado › Atalhos de Teclado. Se você usa essas mesas, troque os atalhos da Lupa em Ajustes.
 
@@ -52,7 +55,7 @@ cd lupa
 scripts/build-app.sh --install --open
 ```
 
-O script compila em modo release, monta `build/Lupa.app` com ícone e fontes, assina e, com `--install`, copia para `/Applications`. Para abrir junto com o Mac, ligue **Abrir ao iniciar sessão** no menu.
+O script compila em modo release, monta `build/Lupa.app` com ícone e fontes e assina. Com `--install`, fecha a Lupa que estiver aberta (à força, se ela não sair em 5 s), apaga a de `/Applications`, copia a nova e confere o binário; com `--open`, abre e confere que está rodando a cópia nova. Para atualizar, rode o mesmo comando depois de `git pull`. Para abrir junto com o Mac, ligue **Abrir ao iniciar sessão** no menu.
 
 ## Permissões
 
@@ -60,16 +63,19 @@ Na primeira vez, o macOS pede três permissões em Ajustes do Sistema › Privac
 
 - **Gravação de Tela e Áudio do Sistema**, obrigatória: o zoom e o desenho trabalham sobre uma foto da tela tirada na hora do atalho, e a gravação filma a tela. Nada sai do seu Mac.
 - **Microfone** e **Câmera**, só se você ligar essas opções no painel de gravação.
+- **Acessibilidade**, opcional, pedida no primeiro zoom ao vivo: com ela, a pinça e o `⌃` + rolar do zoom ao vivo ficam só com a Lupa; sem ela, o zoom ainda responde, mas o app embaixo também recebe o gesto.
 
 Depois de permitir a Gravação de Tela, abra a Lupa de novo.
 
-A assinatura é ad-hoc (sem certificado de desenvolvedor), e o macOS amarra a permissão à assinatura. Por isso **cada nova compilação volta a pedir a permissão**. Se ela ficar presa, zere e permita de novo:
+O macOS amarra a permissão à assinatura do app. Para ela sobreviver às recompilações, o script cria na primeira vez um certificado autoassinado, **Lupa Local Signing**, no seu chaveiro de início de sessão (`scripts/make-signing-cert.sh`), e assina sempre com ele. Assim você só permite uma vez.
+
+Quando a assinatura muda (por exemplo, na primeira instalação com o certificado), o `--install` zera a permissão antiga e avisa; basta permitir de novo. Se a Lupa aparecer ligada em Ajustes e ainda assim pedir permissão, a autorização é de uma versão anterior: remova a Lupa da lista com `−` e abra a Lupa de novo, ou rode:
 
 ```bash
 tccutil reset ScreenCapture io.github.paulofroes.lupa
 ```
 
-Com um certificado próprio, exporte `LUPA_SIGN_IDENTITY="Apple Development: …"` antes do script, e a permissão sobrevive às compilações.
+Com um certificado da Apple, exporte `LUPA_SIGN_IDENTITY="Apple Development: …"` antes do script; `LUPA_SIGN_IDENTITY=-` volta à assinatura ad-hoc.
 
 ## Por dentro
 

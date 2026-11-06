@@ -7,6 +7,7 @@ enum HUDSegment {
     case swatches(selected: Int, highlighter: Bool)
     case separator
     case penWidth(NSColor, String)
+    case group(String)
 }
 
 enum HUDStyle {
@@ -80,6 +81,22 @@ enum HUD {
         return m.height * scale
     }
 
+    // Selo lime com ponto, rótulo e valor em mono, como o "AO VIVO" do design.
+    static func drawBadgeRow(label: String, value: String, origin: CGPoint) {
+        let text = NSAttributedString(string: "\(label)  \(value)", attributes: [
+            .font: Theme.mono(13, .semibold),
+            .foregroundColor: Theme.ink1000,
+            .kern: 1.0,
+        ])
+        let size = text.size()
+        let rect = NSRect(x: origin.x, y: origin.y, width: ceil(size.width) + 44, height: 36)
+        Theme.lime.setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 18, yRadius: 18).fill()
+        Theme.ink1000.setFill()
+        NSBezierPath(ovalIn: NSRect(x: rect.minX + 14, y: rect.midY - 4, width: 8, height: 8)).fill()
+        text.draw(at: CGPoint(x: rect.minX + 30, y: rect.midY - size.height / 2))
+    }
+
     static func fadeAlpha(until: Date, now: Date = Date()) -> CGFloat {
         let remaining = until.timeIntervalSince(now)
         if remaining >= 0 { return 1 }
@@ -112,6 +129,14 @@ enum HUD {
         ])
     }
 
+    private static func groupString(_ text: String, size: CGFloat) -> NSAttributedString {
+        NSAttributedString(string: text.uppercased(), attributes: [
+            .font: Theme.mono(size - 1, .semibold),
+            .foregroundColor: Theme.lime,
+            .kern: 1.2,
+        ])
+    }
+
     private static func labelString(_ text: String) -> NSAttributedString {
         NSAttributedString(string: text, attributes: [
             .font: Theme.mono(13, .medium),
@@ -127,6 +152,7 @@ enum HUD {
         case .swatches: CGFloat(Pens.all.count) * 32 + CGFloat(Pens.all.count - 1) * 6
         case .separator: 1
         case let .penWidth(_, label): 14 + 8 + ceil(labelString(label).size().width)
+        case let .group(text): ceil(groupString(text, size: m.fontSize).size().width)
         }
     }
 
@@ -149,6 +175,9 @@ enum HUD {
             NSBezierPath(ovalIn: NSRect(x: x, y: midY - 7, width: 14, height: 14)).fill()
             let string = labelString(label)
             string.draw(at: CGPoint(x: x + 22, y: midY - string.size().height / 2))
+        case let .group(text):
+            let string = groupString(text, size: m.fontSize)
+            string.draw(at: CGPoint(x: x, y: midY - string.size().height / 2))
         }
     }
 

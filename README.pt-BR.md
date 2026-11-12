@@ -1,0 +1,134 @@
+# Lupa
+
+**Zoom, desenho e gravação de tela para quem dá aula ou apresenta no Mac.**
+
+[Read in English](README.md)
+
+A Lupa fica na barra de menus e só aparece quando você aperta um atalho. Ela aproxima qualquer
+ponto da tela, deixa você desenhar e escrever por cima, mostra um cronômetro de intervalo para a
+turma e grava tudo em alta qualidade, com voz, som do sistema e câmera. A ideia vem do
+[ZoomIt](https://learn.microsoft.com/sysinternals/downloads/zoomit), refeito de forma nativa para o
+macOS.
+
+- **Zoom** em torno do cursor, congelado ou ao vivo enquanto você usa os apps.
+- **Marcações** com caneta, marca-texto, linhas, setas, formas, texto e quadro branco ou preto.
+- **Gravação** na resolução Retina, até 60 fps, em HEVC, H.264 ou ProRes, com zoom no clique.
+- **Intervalo** com cronômetro em tela cheia, legível do fundo da sala.
+
+É um app nativo em Swift, sem dependências, sem acesso à rede e sem telemetria. A interface
+aparece em português quando o macOS está em português, e em inglês nos demais idiomas.
+
+## Requisitos
+
+- macOS 15 Sequoia ou mais novo
+- Xcode 16 ou as Command Line Tools correspondentes (`xcode-select --install`) para compilar
+
+## Instalação
+
+Ainda não há binário notarizado, então a Lupa é compilada a partir do código:
+
+```bash
+git clone https://github.com/pauloFroes/lupa.git
+cd lupa
+scripts/build-app.sh --install --open
+```
+
+O script compila em modo release, monta `build/Lupa.app` com ícone, fontes e traduções e assina o
+app. `--install` fecha a cópia aberta e substitui `/Applications/Lupa.app`; `--open` abre o app e
+confere que a cópia nova é a que está rodando. Para atualizar, rode o mesmo comando depois de
+`git pull`. Para abrir junto com o Mac, ligue **Abrir ao iniciar sessão** no menu.
+
+## Uso
+
+| Atalho | Modo | O que faz |
+| --- | --- | --- |
+| `⌃1` | Zoom | Congela a tela e aproxima em torno do cursor. Role, faça a pinça ou use `↑` `↓` para mudar o zoom; mova o mouse para navegar. Clique para desenhar ali mesmo. |
+| `⌃2` | Desenhar | Desenha sobre a tela congelada, ou sobre o zoom se você veio do `⌃1`. Gravando ou no zoom ao vivo, desenha sobre a tela em movimento. |
+| `⌃3` | Intervalo | Cronômetro em tela cheia. `↑` `↓` somam ou tiram um minuto, `espaço` pausa. |
+| `⌃4` | Zoom ao vivo | Aproxima em torno do cursor enquanto você trabalha; o clique vai para o app embaixo. Pinça, `⌃` + rolar, `⌃+` e `⌃-` mudam o zoom entre 1× e 8×; `⌃0` volta ao inicial. |
+| `⌃5` | Gravar | Abre o painel de gravação; gravando, para. `⌃⇧5` pausa e retoma. |
+
+`Esc` sai de qualquer modo, exceto do zoom ao vivo durante a gravação, quando o `Esc` fica com os
+apps. Todos os atalhos mudam em **Ajustes…** (`⌘,` com o menu aberto), junto com o zoom inicial, a
+cor inicial da caneta, o cursor do zoom ao vivo e a duração do intervalo.
+
+> `⌃1` a `⌃5` coincidem com "Ir para a Mesa 1…5" do Controle de Missão quando esses atalhos estão
+> ligados em Ajustes do Sistema › Teclado › Atalhos de Teclado. Troque um ou outro.
+
+### No desenho
+
+| Tecla | Ação |
+| --- | --- |
+| `R` `G` `B` `O` `Y` `P` | Vermelho, verde, azul, laranja, amarelo, rosa. Com `⇧`, vira marca-texto. |
+| `1`–`5` | Caneta, linha, retângulo, elipse, seta. A escolha vale até você trocar. |
+| segurar `⇧` / `⌃` ou `⌘` / `⌥` / `⌃⇧` | Linha / retângulo / elipse / seta só no arraste atual. |
+| `T` | Escreve no cursor (acentos funcionam); `Esc` termina o texto. |
+| rolar ou pinça | Espessura do traço, ou tamanho da letra no texto. |
+| `X` | Borracha que apaga itens inteiros; `⌥⌘`-clique apaga um item sem trocar de ferramenta. |
+| `E` / `⌘Z` | Apaga tudo / desfaz, inclusive a borracha. |
+| `W` / `K` | Quadro branco / preto. |
+| `⌘C` / `⌘S` | Copia a imagem / salva um PNG na Mesa. |
+| `H` | Mostra ou esconde os comandos. |
+| clique direito | Volta ao zoom (se você veio do `⌃1`) ou sai. |
+
+### Na gravação
+
+O painel do `⌃5` escolhe tela inteira ou uma área, som do sistema, microfone (em faixa própria,
+com medidor de nível), câmera em bolha, anel nos cliques, som de clique opcional, qualidade, taxa
+de quadros e pasta de destino. Depois de uma contagem de 3 segundos, a Lupa grava na resolução
+nativa da tela, e o ícone da barra de menus vira um ponto vermelho com o tempo corrido.
+
+- **Zoom no clique.** A gravação roda dentro do zoom ao vivo: o clique aproxima até o zoom inicial
+  e a imagem volta a 1× depois de 2,5 s com o mouse parado. `fn`-clique clica sem dar zoom.
+- **Desenho na gravação.** `⌃2` desenha sobre a tela em movimento, sem congelar; `Esc` apaga o
+  desenho e devolve o mouse aos apps.
+- **Câmera em bolha.** Sai do caminho quando o cursor vai até ela e volta depois. Segure `⌥` para
+  arrastar; o lugar fica salvo.
+- **Arquivos.** `.mov` em `~/Filmes/Lupa` por padrão, com taxa de quadros constante. O microfone
+  é a primeira faixa de áudio, então players que tocam uma faixa só tocam a sua voz.
+- **Qualidade.** Alta (HEVC), Compatível (H.264) ou Máxima (ProRes 422, arquivos grandes, para
+  editar).
+
+Não há editor de linha do tempo; para cortar o começo e o fim, abra o arquivo no QuickTime Player
+(`⌘T`).
+
+## Permissões
+
+| Permissão | Para quê |
+| --- | --- |
+| Gravação de Tela e Áudio do Sistema | Obrigatória. Zoom e desenho trabalham sobre uma foto da tela tirada na hora do atalho; a gravação filma a tela. |
+| Microfone, Câmera | Só quando ligados no painel de gravação. |
+| Acessibilidade | Opcional. Faz o zoom ao vivo ficar com a pinça e o `⌃` + rolar, sem que o app embaixo aproxime junto, e deixa o zoom no clique mais confiável. |
+
+Depois de permitir a Gravação de Tela, abra a Lupa de novo.
+
+O macOS amarra essas permissões à assinatura do app. Para elas sobreviverem às recompilações, o
+`build-app.sh` cria na primeira vez um certificado autoassinado, **Lupa Local Signing**, no seu
+chaveiro de início de sessão (`scripts/make-signing-cert.sh`) e assina sempre com ele. Quando a
+assinatura muda, o `--install` zera as permissões antigas e pede para você permitir a Lupa de
+novo. Se a Lupa aparecer permitida e ainda assim pedir, remova-a da lista com `−` e abra de novo,
+ou rode:
+
+```bash
+tccutil reset ScreenCapture io.github.paulofroes.lupa
+```
+
+Para assinar com um certificado da Apple, exporte `LUPA_SIGN_IDENTITY="Apple Development: …"`
+antes do script; `LUPA_SIGN_IDENTITY=-` assina ad hoc.
+
+## Privacidade
+
+A Lupa não acessa a rede. As fotos da tela usadas no zoom e no desenho ficam só na memória; nada
+vai para o disco, a não ser que você salve uma imagem ou grave um vídeo, e as gravações vão só
+para a pasta que você escolher.
+
+## Desenvolvimento
+
+Veja a seção [Development](README.md#development) do README em inglês, a
+[visão geral da arquitetura](docs/ARCHITECTURE.md) e o [CONTRIBUTING.md](CONTRIBUTING.md). Issues
+e pull requests podem ser escritos em português ou inglês.
+
+## Licença
+
+Código sob a [licença MIT](LICENSE). As fontes Bricolage Grotesque, Manrope e JetBrains Mono são
+distribuídas sob a SIL Open Font License; veja `Resources/Fonts/`.

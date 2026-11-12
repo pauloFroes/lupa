@@ -47,12 +47,18 @@ final class CameraBubble {
 
     func show(on screen: NSScreen, at savedOrigin: CGPoint? = nil) throws {
         guard panel == nil else { return }
-        guard let device = AVCaptureDevice.default(for: .video) else { return }
+        guard let device = Self.pickCamera() else { return }
         let input = try AVCaptureDeviceInput(device: device)
-        session.beginConfiguration()
-        session.sessionPreset = .high
-        if session.canAddInput(input) { session.addInput(input) }
-        session.commitConfiguration()
+        // Configura na mesma fila do `hide()`: senão a limpeza da gravação anterior, ainda na
+        // fila, tira a entrada recém-posta e a bolha fica preta.
+        let session = session
+        sessionQueue.sync {
+            session.beginConfiguration()
+            session.inputs.forEach { session.removeInput($0) }
+            session.sessionPreset = .high
+            if session.canAddInput(input) { session.addInput(input) }
+            session.commitConfiguration()
+        }
 
         let size = Self.diameter
         var frame = NSRect(
@@ -99,7 +105,6 @@ final class CameraBubble {
         lastSetOrigin = frame.origin
         startTracking()
 
-        let session = session
         sessionQueue.async { session.startRunning() }
     }
 
@@ -113,6 +118,20 @@ final class CameraBubble {
             session.stopRunning()
             session.inputs.forEach { session.removeInput($0) }
         }
+    }
+
+    // A câmera do Mac primeiro: o padrão do sistema pode ser uma câmera virtual ou o iPhone
+    // (Câmera de Continuidade), que entregam imagem preta quando não estão transmitindo.
+    private static func pickCamera() -> AVCaptureDevice? {
+        let devices = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera],
+            mediaType: .video,
+            position: .unspecified
+        ).devices.filter { $0.isConnected && !$0.isSuspended }
+        return devices.first { $0.deviceType == .builtInWideAngleCamera }
+            ?? devices.first { $0.deviceType == .external }
+            ?? devices.first
+            ?? AVCaptureDevice.default(for: .video)
     }
 
     // MARK: - Desvio do mouse

@@ -74,6 +74,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var microphoneInput: AVAssetWriterInput?
     private var clickInput: AVAssetWriterInput?
     private var clickTrack: ClickSoundTrack?
+    // Cliques misturados na primeira faixa de áudio (voz, ou som do sistema sem voz).
+    private var clickMixer: ClickMixer?
+    private var clickMixInput: AVAssetWriterInput?
     private let clickListener = ClickListener()
     private var sessionStart = CMTime.invalid
     private var fillTimer: DispatchSourceTimer?
@@ -119,7 +122,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         self.configuration = configuration
         showsClicks = options.showClicks
         startFillTimer()
-        if clickInput != nil {
+        if clickInput != nil || clickMixer != nil {
             clickListener.start { [weak self] in self?.clickArrived() }
         }
     }
@@ -271,8 +274,12 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
             }
         }
 
-        // Som de clique: faixa por último, para não mudar a ordem das outras.
-        if options.recordsClickSounds {
+        // Som de clique: misturado na primeira faixa, que é a que players comuns tocam. Sem voz
+        // nem som do sistema, vira a única faixa de áudio.
+        if options.recordsClickSounds, let primary = microphoneInput ?? systemAudioInput {
+            clickMixer = ClickMixer(defaultFormat: microphoneInput == nil ? ClickMixer.systemAudioFormat() : nil)
+            clickMixInput = primary
+        } else if options.recordsClickSounds {
             let clicks = AVAssetWriterInput(mediaType: .audio, outputSettings: Self.audioSettings(channels: 1, bitRate: 96_000))
             clicks.expectsMediaDataInRealTime = true
             if writer.canAdd(clicks) {
@@ -385,7 +392,12 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private func appendAudio(_ sampleBuffer: CMSampleBuffer, to input: AVAssetWriterInput?) {
         guard sessionStarted, let input, input.isReadyForMoreMediaData else { return }
         guard let retimed = Self.retimed(sampleBuffer, minus: pausedTotal) else { return }
-        if !input.append(retimed) { reportWriterFailure() }
+        var output = retimed
+        if input === clickMixInput, let clickMixer {
+            guard let mixed = clickMixer.mix(retimed, arrivedAt: CMTimeSubtract(Self.hostNow(), pausedTotal)) else { return }
+            output = mixed
+        }
+        if !input.append(output) { reportWriterFailure() }
     }
 
     private static func retimed(_ sampleBuffer: CMSampleBuffer, minus offset: CMTime) -> CMSampleBuffer? {
@@ -438,17 +450,31 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private func clickArrived() {
         let now = Self.hostNow()
         queue.async {
-            guard !self.failed, !self.paused, self.sessionStarted, let track = self.clickTrack else { return }
-            track.addClick(at: CMTimeSubtract(now, self.pausedTotal))
+            guard !self.failed, !self.paused, self.sessionStarted else { return }
+            let time = CMTimeSubtract(now, self.pausedTotal)
+            self.clickTrack?.addClick(at: time)
+            self.clickMixer?.addClick(at: time)
         }
     }
 
     // A faixa anda um pouco atrás do relógio, para o clique que acabou de chegar ainda caber.
     private func writeClickAudio(upTo end: CMTime? = nil) {
+        fillClickMix()
         guard !failed, !paused, sessionStarted, let track = clickTrack, let input = clickInput,
               input.isReadyForMoreMediaData else { return }
         let target = end ?? CMTimeSubtract(CMTimeSubtract(Self.hostNow(), pausedTotal), CMTime(value: 1, timescale: 12))
         guard let buffer = track.render(from: sessionStart, upTo: target) else { return }
+        if !input.append(buffer) { reportWriterFailure() }
+    }
+
+    // Faixa principal sem buffers há meio segundo (som do sistema em silêncio): escreve silêncio
+    // com os cliques até 0,3 s atrás.
+    private func fillClickMix() {
+        guard !failed, !paused, sessionStarted, let mixer = clickMixer, let input = clickMixInput,
+              input.isReadyForMoreMediaData else { return }
+        let now = CMTimeSubtract(Self.hostNow(), pausedTotal)
+        let end = CMTimeSubtract(now, CMTime(value: 3, timescale: 10))
+        guard let buffer = mixer.filler(from: sessionStart, upTo: end, now: now, quiet: CMTime(value: 1, timescale: 2)) else { return }
         if !input.append(buffer) { reportWriterFailure() }
     }
 

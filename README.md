@@ -23,12 +23,27 @@ It is a native Swift app with no dependencies, no network access and no telemetr
 
 ## Requirements
 
-- macOS 15 Sequoia or later
-- Xcode 16 or the matching Command Line Tools (`xcode-select --install`) to build
+- macOS 15 Sequoia or later, on Apple silicon or Intel
+- To build: Xcode 16, or the matching Command Line Tools (`xcode-select --install`) for a build
+  that runs only on your own Mac's architecture
 
 ## Install
 
-There is no notarized binary yet, so Lupa is built from source:
+### From a zip
+
+Lupa is not notarized by Apple yet, so macOS asks you to allow it once.
+
+1. Unzip `Lupa-<version>.zip` and drag **Lupa.app** into **Applications**.
+2. Open Lupa. macOS says it cannot verify the app; close the alert without moving it to the Trash.
+3. Go to **System Settings › Privacy & Security**, scroll down and click **Open Anyway** next to
+   Lupa, then confirm with your password.
+4. A magnifying glass appears in the menu bar. Press `⌃1`, allow **Screen & System Audio
+   Recording** when asked, and open Lupa again.
+
+To update, replace the app in Applications with the new one. Permissions carry over as long as the
+new build is signed with the same certificate (see [Permissions](#permissions)).
+
+### From source
 
 ```bash
 git clone https://github.com/pauloFroes/lupa.git
@@ -38,9 +53,40 @@ scripts/build-app.sh --install --open
 
 `build-app.sh` compiles a release build, assembles `build/Lupa.app` with its icon, fonts and
 translations, and signs it. `--install` quits any running copy and replaces
-`/Applications/Lupa.app`; `--open` launches it and checks that the new copy is the one running.
-Run the same command after `git pull` to update. Turn on **Open at Login** from the menu to start
-Lupa with your Mac.
+`/Applications/Lupa.app`; `--open` launches it and checks that the new copy is the one running;
+`--universal` builds for both Apple silicon and Intel. Run the same command after `git pull` to
+update. Turn on **Open at Login** from the menu to start Lupa with your Mac.
+
+To make a zip for someone else, run `scripts/package.sh`. It writes `build/Lupa-<version>.zip`
+with a universal build and the installation steps above (`Como instalar.txt`, in Portuguese and
+English).
+
+## Getting started
+
+A five-minute tour of what Lupa does. Every shortcut is listed under [Usage](#usage).
+
+1. **Zoom in on a detail.** Press `⌃1`. The screen freezes and zooms around the pointer; scroll or
+   pinch to zoom further and move the mouse to look around. Press `Esc` to leave.
+2. **Point something out.** Press `⌃2` (or click while zoomed) and drag to draw. Press `R`, `G` or
+   `B` to change color, `5` for arrows, `T` to type, `W` for a whiteboard, `E` to erase everything.
+   `H` shows every drawing shortcut on screen. `Esc` leaves.
+3. **Zoom while you work.** Press `⌃4` for live zoom: the zoom follows the pointer and your clicks
+   reach the app below. `⌃+` and `⌃-` change the zoom; `⌃4` or `Esc` turns it off.
+4. **Record a lesson.** Press `⌃5` to open the recording panel:
+   - choose **Full screen** or drag an **Area**;
+   - turn on **Microphone** and watch the level meter move as you speak;
+   - turn on **Camera bubble** and pick a camera in the preview;
+   - under **Save to**, click **Change…** to pick a folder (the default is `~/Movies/Lupa`);
+   - optionally turn on **Show clicks** (rings) and **Click sound**.
+
+   Click **Record**. After a 3-second countdown, every click zooms in on where you clicked and the
+   view eases back out when the mouse rests; `fn`-click clicks without zooming. Press `⌃2` to draw
+   over the moving screen and `Esc` to clear it, hold `⌥` to drag the camera bubble, and `⌃⇧5` to
+   pause. Press `⌃5` again to stop; a panel offers to open the video or show it in Finder.
+5. **Take a break.** Press `⌃3` for a full-screen countdown; `↑` `↓` change it by a minute.
+
+Lupa's settings (`⌘,` with its menu open) change the shortcuts, the initial zoom, the pen color,
+the live zoom cursor and the break length.
 
 ## Usage
 

@@ -26,7 +26,7 @@ final class RecordingController {
     var onChange: (() -> Void)?
     // Tela gravada, para o Ao vivo abrir nela.
     private(set) var screen: NSScreen?
-    // Área gravada, em pontos da tela (nil = tela inteira): a legenda fica dentro dela.
+    // Área gravada, em pontos da tela (nil = tela inteira).
     private(set) var area: CGRect?
     var onStarted: (() -> Void)?
     var onFinished: ((URL, TimeInterval) -> Void)?
@@ -361,6 +361,7 @@ final class RecordingController {
         closeDonePanel()
         let view = RecordingDoneView(
             fileName: url.lastPathComponent,
+            folder: ScreenRecorder.label(for: url.deletingLastPathComponent()),
             duration: Self.format(duration),
             onOpen: { [weak self] in
                 NSWorkspace.shared.open(url)

@@ -33,7 +33,7 @@
 	<key>ATSApplicationFontsPath</key>
 	<string>Fonts</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>A Lupa grava a sua voz junto com a tela quando o microfone está ligado no painel de gravação e, com a legenda ao vivo ligada, envia a sua fala à OpenAI para transcrever.</string>
+	<string>A Lupa grava a sua voz junto com a tela quando o microfone está ligado no painel de gravação.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>A Lupa mostra a sua câmera numa bolha sobre a tela durante a gravação, quando você liga essa opção.</string>
 	<key>NSHumanReadableCopyright</key>

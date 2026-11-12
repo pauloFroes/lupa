@@ -645,14 +645,16 @@ final class ClickTap {
             return
         }
         guard type == .leftMouseDown else { return }
-        if event.getIntegerValueField(.eventTargetUnixProcessID) == ownPID || Self.onOwnWindow() { return }
+        let mouse = NSEvent.mouseLocation
+        if let window = NSApp.windows.first(where: { $0.isVisible && !$0.ignoresMouseEvents && $0.frame.contains(mouse) }) {
+            LiveZoomController.clickLog.notice("clique numa janela da Lupa (\(String(describing: type(of: window)), privacy: .public), \(Int(window.frame.width))×\(Int(window.frame.height)), nível \(window.level.rawValue))")
+            return
+        }
+        if event.getIntegerValueField(.eventTargetUnixProcessID) == ownPID {
+            LiveZoomController.clickLog.notice("clique com destino na própria Lupa")
+            return
+        }
         let fn = event.flags.contains(.maskSecondaryFn)
         onClick?(fn)
-    }
-
-    // A janela do zoom não recebe clique; as que recebem (barra, bolha, painéis) não dão zoom.
-    private static func onOwnWindow() -> Bool {
-        let mouse = NSEvent.mouseLocation
-        return NSApp.windows.contains { $0.isVisible && !$0.ignoresMouseEvents && $0.frame.contains(mouse) }
     }
 }

@@ -3,48 +3,6 @@ import AppKit
 import CoreMedia
 import ScreenCaptureKit
 
-struct RecordingOptions: Codable, Equatable {
-    enum Source: String, Codable { case display, area }
-
-    enum Quality: String, Codable, CaseIterable {
-        case hevc
-        case h264
-        case prores
-
-        var label: String {
-            switch self {
-            case .hevc: "Alta · HEVC"
-            case .h264: "Compatível · H.264"
-            case .prores: "Máxima · ProRes"
-            }
-        }
-    }
-
-    var source: Source = .display
-    var systemAudio = true
-    var microphone = false
-    var microphoneID: String?
-    var camera = false
-    // Câmera da bolha (uniqueID); nil = automática, a câmera do Mac primeiro.
-    var cameraID: String?
-    var showClicks = true
-    // Som de clique numa faixa própria do vídeo. Opcional no JSON salvo: gravações antigas não
-    // têm a chave (nil = desligado).
-    var clickSounds: Bool?
-    var recordsClickSounds: Bool {
-        get { clickSounds ?? false }
-        set { clickSounds = newValue }
-    }
-    var quality: Quality = .hevc
-    var framesPerSecond = 60
-    // Última área escolhida e último lugar da bolha da câmera, em pontos da tela (origem embaixo
-    // à esquerda); voltam na próxima gravação.
-    var lastArea: CGRect?
-    var cameraOrigin: CGPoint?
-    // Pasta escolhida no painel de gravação (nil = Filmes › Lupa).
-    var folderPath: String?
-}
-
 enum RecordingError: LocalizedError {
     case displayNotFound
     case writerFailed(String)
@@ -52,20 +10,22 @@ enum RecordingError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .displayNotFound: "Não achei a tela escolhida."
-        case let .writerFailed(reason): "O arquivo não pôde ser gravado: \(reason)"
-        case .nothingRecorded: "Nenhum quadro chegou da tela; nada foi gravado."
+        case .displayNotFound: String(localized: "Could not find the selected display.")
+        case let .writerFailed(reason): String(localized: "The file could not be written: \(reason)")
+        case .nothingRecorded: String(localized: "No frames arrived from the screen; nothing was recorded.")
         }
     }
 }
 
-// Grava a tela num .mov com AVAssetWriter: vídeo em quadros constantes (o quadro anterior se
-// repete quando a tela fica parada, para editores não estranharem VFR), som do sistema e
-// microfone em faixas separadas. Todo o estado do arquivo vive na fila `queue`.
+/// Records a display to a `.mov` with `AVAssetWriter`.
+///
+/// Video is written at a constant frame rate: ScreenCaptureKit sends no frames while the screen is
+/// still, so the last frame is repeated to keep editors that dislike VFR happy. Microphone and
+/// system audio go to separate tracks. All writer state is confined to `queue`.
 final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     var onFailure: ((Error) -> Void)?
 
-    private let queue = DispatchQueue(label: "lupa.recorder", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "io.github.paulofroes.lupa.recorder", qos: .userInitiated)
     private var stream: SCStream?
     private var writer: AVAssetWriter?
     private var videoInput: AVAssetWriterInput?
@@ -74,7 +34,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var microphoneInput: AVAssetWriterInput?
     private var clickInput: AVAssetWriterInput?
     private var clickTrack: ClickSoundTrack?
-    // Cliques misturados na primeira faixa de áudio (voz, ou som do sistema sem voz).
+    // Click sounds mixed into the first audio track (voice, or system audio when there is no voice).
     private var clickMixer: ClickMixer?
     private var clickMixInput: AVAssetWriterInput?
     private let clickListener = ClickListener()
@@ -93,16 +53,18 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var failed = false
     private(set) var outputURL: URL?
 
-    // MARK: - Ciclo
+    // MARK: - Lifecycle
 
-    func start(screen: NSScreen, area: CGRect?, options: RecordingOptions, excluding windowIDs: [CGWindowID] = []) async throws {
+    func start(screen: NSScreen, area: CGRect?, options: RecordingOptions, excluding windowIDs: [CGWindowID] = [])
+        async throws
+    {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         let displayID = ScreenCapture.displayID(of: screen)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw RecordingError.displayNotFound
         }
-        // Zoom, desenho, bolha da câmera e zoom ao vivo entram no vídeo.
-        // Só a barra de controle da gravação fica de fora.
+        // Zoom, drawing, the camera bubble and live zoom are all part of the video; only the
+        // recording control bar is left out.
         let excluded = content.windows.filter { windowIDs.contains($0.windowID) }
         let filter = SCContentFilter(display: display, excludingWindows: excluded)
         let configuration = Self.configuration(screen: screen, area: area, options: options)
@@ -127,8 +89,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
-    // No Ao vivo a Lupa desenha o próprio cursor, ampliado e no lugar certo da imagem; o do sistema
-    // e o círculo do clique cairiam no ponto real, fora do zoom.
+    /// During live zoom Lupa draws its own magnified cursor in the right spot; the system cursor and
+    /// click rings would land on the real, unmagnified position.
     func setLiveCursor(_ live: Bool) {
         guard let stream, let configuration else { return }
         configuration.showsCursor = !live
@@ -165,14 +127,16 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
-    // MARK: - Configuração
+    // MARK: - Configuration
 
-    private static func configuration(screen: NSScreen, area: CGRect?, options: RecordingOptions) -> SCStreamConfiguration {
+    private static func configuration(screen: NSScreen, area: CGRect?, options: RecordingOptions)
+        -> SCStreamConfiguration
+    {
         let configuration = SCStreamConfiguration()
         let scale = screen.backingScaleFactor
         var size = screen.frame.size
         if let area {
-            // sourceRect usa a origem no canto superior esquerdo da tela.
+            // `sourceRect` uses a top-left origin.
             configuration.sourceRect = CGRect(
                 x: area.minX,
                 y: screen.frame.height - area.maxY,
@@ -198,19 +162,19 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         return configuration
     }
 
-    // HEVC e H.264 em 4:2:0 exigem largura e altura pares.
+    /// 4:2:0 HEVC and H.264 need even dimensions.
     private static func evenPixels(_ value: CGFloat) -> Int {
         max(2, Int(value) & ~1)
     }
 
-    // ~/Filmes/Lupa
+    /// `~/Movies/Lupa`
     static var defaultFolder: URL {
         FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Lupa", isDirectory: true)
     }
 
-    // A pasta escolhida; se ela sumiu (disco externo desconectado, pasta apagada), volta para
-    // Filmes › Lupa em vez de perder a gravação.
+    /// The chosen folder. If it is gone (external drive unplugged, folder deleted), falls back to
+    /// the default instead of losing the recording.
     static func folder(for options: RecordingOptions) -> URL {
         guard let path = options.folderPath, !path.isEmpty else { return defaultFolder }
         var isDirectory: ObjCBool = false
@@ -220,7 +184,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         return URL(fileURLWithPath: path, isDirectory: true)
     }
 
-    // "Filmes › Lupa", "Mesa › Aulas": as duas últimas pastas, com os nomes do Finder.
+    /// The last two path components with Finder display names, e.g. "Movies › Lupa".
     static func label(for folder: URL) -> String {
         let manager = FileManager.default
         let parent = folder.deletingLastPathComponent()
@@ -231,9 +195,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
     private static func makeOutputURL(in folder: URL) throws -> URL {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd 'às' HH.mm.ss"
-        return folder.appendingPathComponent("Lupa \(formatter.string(from: Date())).mov")
+        return folder.appendingPathComponent(FileNames.timestamped("mov"))
     }
 
     private func setUpWriter(url: URL, configuration: SCStreamConfiguration, options: RecordingOptions) throws {
@@ -245,20 +207,24 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         let fps = options.framesPerSecond
         frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
 
-        let video = AVAssetWriterInput(mediaType: .video, outputSettings: Self.videoSettings(
-            width: width, height: height, fps: fps, quality: options.quality
-        ))
+        let video = AVAssetWriterInput(
+            mediaType: .video,
+            outputSettings: Self.videoSettings(
+                width: width, height: height, fps: fps, quality: options.quality
+            ))
         video.expectsMediaDataInRealTime = true
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: video, sourcePixelBufferAttributes: nil)
-        guard writer.canAdd(video) else { throw RecordingError.writerFailed("vídeo recusado") }
+        guard writer.canAdd(video) else {
+            throw RecordingError.writerFailed(String(localized: "the video track was rejected"))
+        }
         writer.add(video)
 
-        // O microfone é a primeira faixa de áudio: players e editores que tocam só uma faixa
-        // tocam a voz, e não o som do Mac (muitas vezes mudo).
-        // O microfone chega com o número de canais do aparelho, que só se conhece no primeiro
-        // buffer; a faixa é declarada mono e o conversor do writer ajusta.
+        // The microphone is the first audio track: players and editors that only play one track
+        // then play the voice rather than (often silent) system audio. Its channel count is only
+        // known from the first buffer, so the track is declared mono and the writer converts.
         if options.microphone {
-            let mic = AVAssetWriterInput(mediaType: .audio, outputSettings: Self.audioSettings(channels: 1, bitRate: 128_000))
+            let mic = AVAssetWriterInput(
+                mediaType: .audio, outputSettings: Self.audioSettings(channels: 1, bitRate: 128_000))
             mic.expectsMediaDataInRealTime = true
             if writer.canAdd(mic) {
                 writer.add(mic)
@@ -266,7 +232,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
             }
         }
         if options.systemAudio {
-            let audio = AVAssetWriterInput(mediaType: .audio, outputSettings: Self.audioSettings(channels: 2, bitRate: 256_000))
+            let audio = AVAssetWriterInput(
+                mediaType: .audio, outputSettings: Self.audioSettings(channels: 2, bitRate: 256_000))
             audio.expectsMediaDataInRealTime = true
             if writer.canAdd(audio) {
                 writer.add(audio)
@@ -274,13 +241,14 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
             }
         }
 
-        // Som de clique: misturado na primeira faixa, que é a que players comuns tocam. Sem voz
-        // nem som do sistema, vira a única faixa de áudio.
+        // Click sounds are mixed into the first track, the one ordinary players play. With neither
+        // voice nor system audio they get a track of their own.
         if options.recordsClickSounds, let primary = microphoneInput ?? systemAudioInput {
             clickMixer = ClickMixer(defaultFormat: microphoneInput == nil ? ClickMixer.systemAudioFormat() : nil)
             clickMixInput = primary
         } else if options.recordsClickSounds {
-            let clicks = AVAssetWriterInput(mediaType: .audio, outputSettings: Self.audioSettings(channels: 1, bitRate: 96_000))
+            let clicks = AVAssetWriterInput(
+                mediaType: .audio, outputSettings: Self.audioSettings(channels: 1, bitRate: 96_000))
             clicks.expectsMediaDataInRealTime = true
             if writer.canAdd(clicks) {
                 writer.add(clicks)
@@ -290,7 +258,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         }
 
         guard writer.startWriting() else {
-            throw RecordingError.writerFailed(writer.error?.localizedDescription ?? "erro desconhecido")
+            throw RecordingError.writerFailed(writer.error?.localizedDescription ?? String(localized: "unknown error"))
         }
         self.writer = writer
         videoInput = video
@@ -298,7 +266,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         outputURL = url
     }
 
-    private static func videoSettings(width: Int, height: Int, fps: Int, quality: RecordingOptions.Quality) -> [String: Any] {
+    private static func videoSettings(width: Int, height: Int, fps: Int, quality: RecordingOptions.Quality) -> [String:
+        Any]
+    {
         let color: [String: Any] = [
             AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
             AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
@@ -341,7 +311,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         ]
     }
 
-    // MARK: - Amostras (fila `queue`)
+    // MARK: - Samples (on `queue`)
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard !failed, !paused, sampleBuffer.isValid else { return }
@@ -363,7 +333,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private func appendVideo(_ sampleBuffer: CMSampleBuffer) {
         guard
             let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
-            as? [[SCStreamFrameInfo: Any]],
+                as? [[SCStreamFrameInfo: Any]],
             let rawStatus = attachments.first?[.status] as? Int,
             SCFrameStatus(rawValue: rawStatus) == .complete,
             let pixelBuffer = sampleBuffer.imageBuffer
@@ -394,7 +364,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         guard let retimed = Self.retimed(sampleBuffer, minus: pausedTotal) else { return }
         var output = retimed
         if input === clickMixInput, let clickMixer {
-            guard let mixed = clickMixer.mix(retimed, arrivedAt: CMTimeSubtract(Self.hostNow(), pausedTotal)) else { return }
+            guard let mixed = clickMixer.mix(retimed, arrivedAt: CMTimeSubtract(Self.hostNow(), pausedTotal)) else {
+                return
+            }
             output = mixed
         }
         if !input.append(output) { reportWriterFailure() }
@@ -405,7 +377,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         var count: CMItemCount = 0
         CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, entryCount: 0, arrayToFill: nil, entriesNeededOut: &count)
         var timing = [CMSampleTimingInfo](repeating: CMSampleTimingInfo(), count: count)
-        CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, entryCount: count, arrayToFill: &timing, entriesNeededOut: &count)
+        CMSampleBufferGetSampleTimingInfoArray(
+            sampleBuffer, entryCount: count, arrayToFill: &timing, entriesNeededOut: &count)
         for index in timing.indices {
             timing[index].presentationTimeStamp = CMTimeSubtract(timing[index].presentationTimeStamp, offset)
             if timing[index].decodeTimeStamp.isValid {
@@ -423,8 +396,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         return copy
     }
 
-    // Tela parada não gera quadro no ScreenCaptureKit: o timer repete o último para manter a
-    // taxa constante.
+    /// A still screen produces no frames, so this timer repeats the last one to keep the rate constant.
     private func startFillTimer() {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         let interval = DispatchTimeInterval.nanoseconds(Int(1e9 * frameDuration.seconds))
@@ -445,7 +417,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         appendPixelBuffer(lastPixelBuffer, at: CMTimeAdd(lastVideoTime, frameDuration))
     }
 
-    // MARK: - Som de clique (fila `queue`)
+    // MARK: - Click sounds (on `queue`)
 
     private func clickArrived() {
         let now = Self.hostNow()
@@ -457,31 +429,35 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
-    // A faixa anda um pouco atrás do relógio, para o clique que acabou de chegar ainda caber.
+    /// The click track runs slightly behind the clock so a click that just arrived still fits.
     private func writeClickAudio(upTo end: CMTime? = nil) {
         fillClickMix()
         guard !failed, !paused, sessionStarted, let track = clickTrack, let input = clickInput,
-              input.isReadyForMoreMediaData else { return }
+            input.isReadyForMoreMediaData
+        else { return }
         let target = end ?? CMTimeSubtract(CMTimeSubtract(Self.hostNow(), pausedTotal), CMTime(value: 1, timescale: 12))
         guard let buffer = track.render(from: sessionStart, upTo: target) else { return }
         if !input.append(buffer) { reportWriterFailure() }
     }
 
-    // Faixa principal sem buffers há meio segundo (som do sistema em silêncio): escreve silêncio
-    // com os cliques até 0,3 s atrás.
+    /// When the primary track has had no buffers for half a second (silent system audio), writes
+    /// silence with the clicks up to 0.3 s ago.
     private func fillClickMix() {
         guard !failed, !paused, sessionStarted, let mixer = clickMixer, let input = clickMixInput,
-              input.isReadyForMoreMediaData else { return }
+            input.isReadyForMoreMediaData
+        else { return }
         let now = CMTimeSubtract(Self.hostNow(), pausedTotal)
         let end = CMTimeSubtract(now, CMTime(value: 3, timescale: 10))
-        guard let buffer = mixer.filler(from: sessionStart, upTo: end, now: now, quiet: CMTime(value: 1, timescale: 2)) else { return }
+        guard let buffer = mixer.filler(from: sessionStart, upTo: end, now: now, quiet: CMTime(value: 1, timescale: 2))
+        else { return }
         if !input.append(buffer) { reportWriterFailure() }
     }
 
     private func reportWriterFailure() {
         guard !failed, let writer, writer.status == .failed else { return }
         failed = true
-        let error = RecordingError.writerFailed(writer.error?.localizedDescription ?? "erro desconhecido")
+        let error = RecordingError.writerFailed(
+            writer.error?.localizedDescription ?? String(localized: "unknown error"))
         DispatchQueue.main.async { self.onFailure?(error) }
     }
 
@@ -495,7 +471,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         guard sessionStarted, writer.status == .writing else {
             writer.cancelWriting()
             try? FileManager.default.removeItem(at: url)
-            let error: Error = writer.error.map { RecordingError.writerFailed($0.localizedDescription) }
+            let error: Error =
+                writer.error.map { RecordingError.writerFailed($0.localizedDescription) }
                 ?? RecordingError.nothingRecorded
             completion(.failure(error))
             return
@@ -518,7 +495,10 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
             if writer.status == .completed {
                 completion(.success(url))
             } else {
-                completion(.failure(RecordingError.writerFailed(writer.error?.localizedDescription ?? "erro desconhecido")))
+                completion(
+                    .failure(
+                        RecordingError.writerFailed(
+                            writer.error?.localizedDescription ?? String(localized: "unknown error"))))
             }
         }
         lastPixelBuffer = nil

@@ -2,8 +2,8 @@ import AVFoundation
 import AppKit
 import SwiftUI
 
-// Prévia redonda da câmera no painel de gravação, igual à bolha (espelhada, borda lime).
-// Abre a câmera só enquanto o painel mostra a prévia.
+/// A round, mirrored live preview in the recording panel that matches the bubble. The camera is
+/// only open while the preview is on screen.
 struct CameraPreview: NSViewRepresentable {
     let deviceID: String?
 
@@ -24,7 +24,7 @@ struct CameraPreview: NSViewRepresentable {
 
 final class CameraPreviewView: NSView {
     private let session = AVCaptureSession()
-    private let queue = DispatchQueue(label: "lupa.camera.preview")
+    private let queue = DispatchQueue(label: "io.github.paulofroes.lupa.camera-preview")
     private let preview: AVCaptureVideoPreviewLayer
     private let message = NSTextField(labelWithString: "")
     private var currentID: String?
@@ -50,6 +50,7 @@ final class CameraPreviewView: NSView {
         addSubview(message)
     }
 
+    @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
     override func layout() {
@@ -75,7 +76,7 @@ final class CameraPreviewView: NSView {
                 }
             }
         default:
-            show("Sem acesso à câmera")
+            show(String(localized: "No camera access"))
         }
     }
 
@@ -84,14 +85,14 @@ final class CameraPreviewView: NSView {
         let session = session
         queue.async {
             session.stopRunning()
-            session.inputs.forEach { session.removeInput($0) }
+            for existing in session.inputs { session.removeInput(existing) }
         }
     }
 
     private func connect() {
         guard !stopped else { return }
         guard let device = CameraBubble.pickCamera(id: wanted) else {
-            show("Nenhuma câmera")
+            show(String(localized: "No camera"))
             return
         }
         guard device.uniqueID != currentID else { return }
@@ -100,7 +101,7 @@ final class CameraPreviewView: NSView {
         let session = session
         queue.async { [weak self] in
             session.beginConfiguration()
-            session.inputs.forEach { session.removeInput($0) }
+            for existing in session.inputs { session.removeInput(existing) }
             session.sessionPreset = .high
             if let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) {
                 session.addInput(input)

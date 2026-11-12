@@ -6,19 +6,23 @@ final class RecordingControlModel: ObservableObject {
     @Published var paused = false
 }
 
-// Barra flutuante durante a gravação: tempo, pausar e parar. Fica fora do vídeo (o gravador a
-// exclui) e não rouba o foco do app que está sendo gravado.
+/// Floating bar shown while recording: elapsed time, pause and stop. It is excluded from the video
+/// and never takes focus from the app being recorded.
 final class RecordingControlBar {
     let model = RecordingControlModel()
     private var panel: NSPanel?
 
     var windowID: CGWindowID? { panel.map { CGWindowID($0.windowNumber) } }
 
-    func show(on screen: NSScreen, shortcut: String, pauseShortcut: String, onPause: @escaping () -> Void, onStop: @escaping () -> Void) {
+    func show(
+        on screen: NSScreen, shortcut: String, pauseShortcut: String, onPause: @escaping () -> Void,
+        onStop: @escaping () -> Void
+    ) {
         hide()
         model.time = "00:00"
         model.paused = false
-        let view = RecordingControlView(model: model, shortcut: shortcut, pauseShortcut: pauseShortcut, onPause: onPause, onStop: onStop)
+        let view = RecordingControlView(
+            model: model, shortcut: shortcut, pauseShortcut: pauseShortcut, onPause: onPause, onStop: onStop)
         let host = FirstClickHostingView(rootView: view)
         host.layoutSubtreeIfNeeded()
         let size = host.fittingSize
@@ -50,7 +54,7 @@ final class RecordingControlBar {
     }
 }
 
-// A barra nunca vira janela ativa: sem isto o primeiro clique só a "ativaria".
+// The bar never becomes key; without this the first click would only activate it.
 private final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
@@ -67,13 +71,13 @@ private struct RecordingControlView: View {
             Circle()
                 .fill(model.paused ? Palette.onInkMuted : Palette.danger)
                 .frame(width: 10, height: 10)
-            Text(model.paused ? "pausado" : "gravando")
+            Text(model.paused ? String(localized: "paused") : String(localized: "recording"))
                 .font(.lupaText(13, .semibold))
             Text(model.time)
                 .font(.lupaMono(13))
                 .foregroundColor(Palette.onInkText)
                 .frame(minWidth: 48, alignment: .leading)
-            // Só o ícone e o atalho; o botão inteiro recebe o clique.
+            // Icon and shortcut only; the whole button is the hit target.
             Button(action: onPause) {
                 HStack(spacing: 6) {
                     Image(systemName: model.paused ? "play.fill" : "pause.fill")
@@ -90,7 +94,7 @@ private struct RecordingControlView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(model.paused ? "Retomar" : "Pausar")
+            .help(model.paused ? String(localized: "Resume") : String(localized: "Pause"))
             Button(action: onStop) {
                 HStack(spacing: 6) {
                     Image(systemName: "stop.fill").font(.system(size: 11, weight: .bold))
@@ -105,7 +109,7 @@ private struct RecordingControlView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Parar")
+            .help("Stop")
         }
         .fixedSize()
         .foregroundColor(Palette.paper)

@@ -1,15 +1,15 @@
 import AppKit
 import Carbon.HIToolbox
 
-// Arraste para escolher a área da gravação. Devolve o retângulo em pontos da tela, com a
-// origem no canto inferior esquerdo (coordenadas da view).
+/// Drag to choose the recording area. Reports the rectangle in screen points with a bottom-left
+/// origin (view coordinates), or `nil` when cancelled.
 final class AreaSelectorView: NSView {
     var onFinish: ((CGRect?) -> Void)?
 
     private var start: CGPoint?
     private var selection: CGRect?
     private var mouse: CGPoint = .zero
-    // Área da gravação anterior, já marcada: ↩ grava nela de novo.
+    /// The previous recording's area, preselected so ↩ reuses it.
     private var previous: CGRect?
 
     convenience init(frame: NSRect, previous: CGRect?) {
@@ -91,8 +91,19 @@ final class AreaSelectorView: NSView {
         }
         HUD.drawBar(
             selection == nil
-                ? [.badge("área"), HUD.hint("arraste", "escolhe"), HUD.hint("↩", "tela inteira"), HUD.hint("esc", "cancela")]
-                : [.badge("área"), HUD.hint("↩", "grava nesta área"), HUD.hint("arraste", "escolhe outra"), HUD.hint("⇧↩", "tela inteira"), HUD.hint("esc", "cancela")],
+                ? [
+                    .badge(String(localized: "area")),
+                    HUD.hint(String(localized: "drag"), String(localized: "select")),
+                    HUD.hint("↩", String(localized: "full screen")),
+                    HUD.hint("esc", String(localized: "cancel")),
+                ]
+                : [
+                    .badge(String(localized: "area")),
+                    HUD.hint("↩", String(localized: "record this area")),
+                    HUD.hint(String(localized: "drag"), String(localized: "select another")),
+                    HUD.hint("⇧↩", String(localized: "full screen")),
+                    HUD.hint("esc", String(localized: "cancel")),
+                ],
             style: .primary,
             centerX: bounds.midX,
             bottom: 40,
@@ -104,38 +115,16 @@ final class AreaSelectorView: NSView {
     private func drawSizeLabel(for rect: CGRect) {
         let scale = window?.backingScaleFactor ?? 2
         let text = "\(Int(rect.width * scale)) × \(Int(rect.height * scale))"
-        let label = NSAttributedString(string: text, attributes: [
-            .font: Theme.mono(12, .semibold),
-            .foregroundColor: Theme.ink1000,
-        ])
+        let label = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: Theme.mono(12, .semibold),
+                .foregroundColor: Theme.ink1000,
+            ])
         let size = label.size()
         let pill = NSRect(x: rect.minX, y: rect.maxY + 8, width: size.width + 16, height: 24)
         Theme.lime.setFill()
         NSBezierPath(roundedRect: pill, xRadius: 12, yRadius: 12).fill()
         label.draw(at: CGPoint(x: pill.minX + 8, y: pill.midY - size.height / 2))
-    }
-}
-
-// Contagem 3-2-1 antes de gravar. A janela fecha antes do primeiro quadro.
-final class CountdownView: NSView {
-    var value = 3 {
-        didSet { needsDisplay = true }
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let diameter: CGFloat = 220
-        let circle = NSRect(x: bounds.midX - diameter / 2, y: bounds.midY - diameter / 2, width: diameter, height: diameter)
-        Theme.ink900.withAlphaComponent(0.92).setFill()
-        NSBezierPath(ovalIn: circle).fill()
-        let ring = NSBezierPath(ovalIn: circle.insetBy(dx: 3, dy: 3))
-        ring.lineWidth = 6
-        Theme.lime.setStroke()
-        ring.stroke()
-        let number = NSAttributedString(string: "\(value)", attributes: [
-            .font: Theme.display(120, .semibold),
-            .foregroundColor: Theme.paper100,
-        ])
-        let size = number.size()
-        number.draw(at: CGPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))
     }
 }

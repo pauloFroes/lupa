@@ -3,7 +3,12 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>pt-BR</string>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>pt-BR</string>
+	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Lupa</string>
 	<key>CFBundleExecutable</key>
@@ -19,9 +24,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.2.0</string>
+	<string>0.3.0</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>3</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>LSMinimumSystemVersion</key>
@@ -33,10 +38,10 @@
 	<key>ATSApplicationFontsPath</key>
 	<string>Fonts</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>A Lupa grava a sua voz junto com a tela quando o microfone está ligado no painel de gravação.</string>
+	<string>Lupa records your voice along with the screen when the microphone is turned on in the recording panel.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>A Lupa mostra a sua câmera numa bolha sobre a tela durante a gravação, quando você liga essa opção.</string>
+	<string>Lupa shows your camera in a bubble on screen while recording, when you turn that option on.</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>MIT · github.com/pauloFroes/lupa</string>
+	<string>© 2026 Paulo Fróes · MIT License</string>
 </dict>
 </plist>

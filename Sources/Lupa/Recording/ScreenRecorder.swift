@@ -28,6 +28,13 @@ struct RecordingOptions: Codable, Equatable {
     // Câmera da bolha (uniqueID); nil = automática, a câmera do Mac primeiro.
     var cameraID: String?
     var showClicks = true
+    // Som de clique numa faixa própria do vídeo. Opcional no JSON salvo: gravações antigas não
+    // têm a chave (nil = desligado).
+    var clickSounds: Bool?
+    var recordsClickSounds: Bool {
+        get { clickSounds ?? false }
+        set { clickSounds = newValue }
+    }
     var quality: Quality = .hevc
     var framesPerSecond = 60
     // Última área escolhida e último lugar da bolha da câmera, em pontos da tela (origem embaixo
@@ -65,6 +72,10 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var adaptor: AVAssetWriterInputPixelBufferAdaptor?
     private var systemAudioInput: AVAssetWriterInput?
     private var microphoneInput: AVAssetWriterInput?
+    private var clickInput: AVAssetWriterInput?
+    private var clickTrack: ClickSoundTrack?
+    private let clickListener = ClickListener()
+    private var sessionStart = CMTime.invalid
     private var fillTimer: DispatchSourceTimer?
     private var configuration: SCStreamConfiguration?
     private var showsClicks = false
@@ -108,6 +119,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         self.configuration = configuration
         showsClicks = options.showClicks
         startFillTimer()
+        if clickInput != nil {
+            clickListener.start { [weak self] in self?.clickArrived() }
+        }
     }
 
     // No Ao vivo a Lupa desenha o próprio cursor, ampliado e no lugar certo da imagem; o do sistema
@@ -136,6 +150,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func stop() async throws -> URL {
+        clickListener.stop()
         if let stream {
             try? await stream.stopCapture()
         }
@@ -256,6 +271,17 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
             }
         }
 
+        // Som de clique: faixa por último, para não mudar a ordem das outras.
+        if options.recordsClickSounds {
+            let clicks = AVAssetWriterInput(mediaType: .audio, outputSettings: Self.audioSettings(channels: 1, bitRate: 96_000))
+            clicks.expectsMediaDataInRealTime = true
+            if writer.canAdd(clicks) {
+                writer.add(clicks)
+                clickInput = clicks
+                clickTrack = ClickSoundTrack()
+            }
+        }
+
         guard writer.startWriting() else {
             throw RecordingError.writerFailed(writer.error?.localizedDescription ?? "erro desconhecido")
         }
@@ -339,6 +365,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         if !sessionStarted {
             writer?.startSession(atSourceTime: time)
             sessionStarted = true
+            sessionStart = time
         } else if lastVideoTime.isValid, CMTimeCompare(time, lastVideoTime) <= 0 {
             return
         }
@@ -390,7 +417,10 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         let interval = DispatchTimeInterval.nanoseconds(Int(1e9 * frameDuration.seconds))
         timer.schedule(deadline: .now() + interval, repeating: interval, leeway: .milliseconds(2))
-        timer.setEventHandler { [weak self] in self?.fillStaticFrame() }
+        timer.setEventHandler { [weak self] in
+            self?.fillStaticFrame()
+            self?.writeClickAudio()
+        }
         timer.resume()
         fillTimer = timer
     }
@@ -401,6 +431,25 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         let gap = CMTimeSubtract(now, lastVideoTime)
         guard CMTimeCompare(gap, CMTimeMultiply(frameDuration, multiplier: 2)) >= 0 else { return }
         appendPixelBuffer(lastPixelBuffer, at: CMTimeAdd(lastVideoTime, frameDuration))
+    }
+
+    // MARK: - Som de clique (fila `queue`)
+
+    private func clickArrived() {
+        let now = Self.hostNow()
+        queue.async {
+            guard !self.failed, !self.paused, self.sessionStarted, let track = self.clickTrack else { return }
+            track.addClick(at: CMTimeSubtract(now, self.pausedTotal))
+        }
+    }
+
+    // A faixa anda um pouco atrás do relógio, para o clique que acabou de chegar ainda caber.
+    private func writeClickAudio(upTo end: CMTime? = nil) {
+        guard !failed, !paused, sessionStarted, let track = clickTrack, let input = clickInput,
+              input.isReadyForMoreMediaData else { return }
+        let target = end ?? CMTimeSubtract(CMTimeSubtract(Self.hostNow(), pausedTotal), CMTime(value: 1, timescale: 12))
+        guard let buffer = track.render(from: sessionStart, upTo: target) else { return }
+        if !input.append(buffer) { reportWriterFailure() }
     }
 
     private func reportWriterFailure() {
@@ -433,9 +482,11 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         if let lastPixelBuffer, CMTimeCompare(end, lastVideoTime) > 0 {
             appendPixelBuffer(lastPixelBuffer, at: end)
         }
+        writeClickAudio(upTo: lastVideoTime)
         videoInput?.markAsFinished()
         systemAudioInput?.markAsFinished()
         microphoneInput?.markAsFinished()
+        clickInput?.markAsFinished()
         writer.endSession(atSourceTime: lastVideoTime)
         writer.finishWriting {
             if writer.status == .completed {

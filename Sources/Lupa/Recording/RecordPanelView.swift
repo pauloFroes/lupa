@@ -116,7 +116,7 @@ struct RecordPanelView: View {
                 divider
                 toggleRow("Mostrar cliques", "Um anel marca cada clique no vídeo.", isOn: $prefs.recording.showClicks)
                 divider
-                toggleRow("Som do clique", "Cada clique faz um “tec” no vídeo, numa faixa de áudio própria.", isOn: $prefs.recording.recordsClickSounds)
+                toggleRow("Som do clique", "Cada clique faz um “tec” no áudio do vídeo.", isOn: $prefs.recording.recordsClickSounds)
             }
             .padding(.horizontal, 14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Palette.inkRaised))

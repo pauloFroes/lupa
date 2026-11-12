@@ -210,7 +210,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         targetZoom = autoZoomLevel
         logZoom.target = log(Double(targetZoom))
-        NSLog("Lupa gravação: clique, zoom %.2f", targetZoom)
+        Self.clickLog.notice("clique deu zoom \(Double(self.targetZoom))")
     }
 
     // Mouse parado por `autoZoomIdle` segundos: volta a 1×.

@@ -4,17 +4,30 @@ import Testing
 @testable import Lupa
 
 struct ShapeTests {
+    /// `NSEvent.ModifierFlags` is not `Sendable`, so the cases carry its raw value.
+    struct ModifierCase: Sendable, CustomTestStringConvertible {
+        let rawFlags: UInt
+        let kind: Shape.Kind
+        let testDescription: String
+
+        init(_ flags: NSEvent.ModifierFlags, _ kind: Shape.Kind, _ description: String) {
+            rawFlags = flags.rawValue
+            self.kind = kind
+            testDescription = description
+        }
+    }
+
     @Test(arguments: [
-        (NSEvent.ModifierFlags(), Shape.Kind.freehand) as (NSEvent.ModifierFlags, Shape.Kind),
-        ([.shift], .line),
-        ([.control], .rectangle),
-        ([.command], .rectangle),
-        ([.option], .ellipse),
-        ([.control, .shift], .arrow),
-        ([.command, .shift], .arrow),
+        ModifierCase([], .freehand, "none"),
+        ModifierCase([.shift], .line, "shift"),
+        ModifierCase([.control], .rectangle, "control"),
+        ModifierCase([.command], .rectangle, "command"),
+        ModifierCase([.option], .ellipse, "option"),
+        ModifierCase([.control, .shift], .arrow, "control-shift"),
+        ModifierCase([.command, .shift], .arrow, "command-shift"),
     ])
-    func modifierSelectsKind(_ testCase: (flags: NSEvent.ModifierFlags, kind: Shape.Kind)) {
-        #expect(Shape.kind(for: testCase.flags) == testCase.kind)
+    func modifierSelectsKind(_ testCase: ModifierCase) {
+        #expect(Shape.kind(for: NSEvent.ModifierFlags(rawValue: testCase.rawFlags)) == testCase.kind)
     }
 
     @Test func lineHitTestsNearTheSegmentOnly() {

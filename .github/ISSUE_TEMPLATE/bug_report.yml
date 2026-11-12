@@ -1,0 +1,48 @@
+name: Bug report
+description: Something does not work as expected.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Press ⌃4
+        2. Pinch to zoom
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: macOS 15.5 (24F74)
+    validations:
+      required: true
+  - type: input
+    id: lupa
+    attributes:
+      label: Lupa version or commit
+      description: Shown in About Lupa, or `git rev-parse --short HEAD`.
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Mac and displays
+      placeholder: MacBook Air M2, external 4K display at 60 Hz
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Output of `log show --last 10m --predicate 'subsystem == "io.github.paulofroes.lupa"' --debug`
+        right after the problem happened.
+      render: text

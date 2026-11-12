@@ -1,8 +1,9 @@
 import AppKit
 
-// Desenha o ícone 1024×1024 da Lupa: lente lime sobre tinta, com a sombra dura olive.
+// Draws the 1024×1024 app icon: a lime lens on ink with a hard olive shadow.
+// Usage: swiftc -O -o build/make-icon scripts/make-icon.swift && build/make-icon icon.png
 guard CommandLine.arguments.count == 2 else {
-    FileHandle.standardError.write("uso: make-icon <saida.png>\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: make-icon <output.png>\n".data(using: .utf8)!)
     exit(1)
 }
 
@@ -16,10 +17,12 @@ func color(_ hex: UInt32) -> NSColor {
 }
 
 let size = 1024
-guard let rep = NSBitmapImageRep(
-    bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8, samplesPerPixel: 4,
-    hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
-) else { exit(1) }
+guard
+    let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8, samplesPerPixel: 4,
+        hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+    )
+else { exit(1) }
 
 NSGraphicsContext.saveGraphicsState()
 NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)

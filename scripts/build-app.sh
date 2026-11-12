@@ -1,20 +1,38 @@
 #!/usr/bin/env bash
-# Monta build/Lupa.app a partir do SwiftPM. Uso: scripts/build-app.sh [--install] [--open]
-# LUPA_SIGN_IDENTITY escolhe o certificado; sem ele, usa (e cria na primeira vez) o certificado
-# local "Lupa Local Signing". LUPA_SIGN_IDENTITY=- volta à assinatura ad-hoc.
+# Builds build/Lupa.app from the Swift package.
+#
+# Usage: scripts/build-app.sh [--install] [--open]
+#   --install  quit any running Lupa, replace /Applications/Lupa.app and verify the copy
+#   --open     launch the built (or installed) app and verify that copy is the one running
+#
+# LUPA_SIGN_IDENTITY picks the code-signing identity. By default the script creates (once) and
+# uses a self-signed "Lupa Local Signing" certificate; LUPA_SIGN_IDENTITY=- signs ad hoc.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+readonly bundle_id=io.github.paulofroes.lupa
 install=false
 open_after=false
 for arg in "$@"; do
   case "$arg" in
     --install) install=true ;;
     --open) open_after=true ;;
-    *) echo "opção desconhecida: $arg" >&2; exit 2 ;;
+    -h | --help)
+      sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $arg" >&2
+      exit 2
+      ;;
   esac
 done
+
+fail() {
+  echo "error: $*" >&2
+  exit 1
+}
 
 swift build -c release
 bin_dir="$(swift build -c release --show-bin-path)"
@@ -37,16 +55,19 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/Fonts"
 cp "$bin_dir/Lupa" "$app/Contents/MacOS/Lupa"
 cp Resources/Info.plist "$app/Contents/Info.plist"
 cp Resources/Fonts/*.ttf "$app/Contents/Resources/Fonts/"
+cp -R Resources/*.lproj "$app/Contents/Resources/"
 cp build/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 
 identity="${LUPA_SIGN_IDENTITY:-Lupa Local Signing}"
-[ "$identity" = "Lupa Local Signing" ] && scripts/make-signing-cert.sh "$identity" >/dev/null
-codesign --force --sign "$identity" --identifier io.github.paulofroes.lupa "$app"
-echo "pronto: $app"
+if [ "$identity" = "Lupa Local Signing" ]; then
+  scripts/make-signing-cert.sh "$identity" >/dev/null
+fi
+codesign --force --sign "$identity" --identifier "$bundle_id" "$app"
+echo "built: $app"
 
 app_running() { pgrep -x Lupa >/dev/null; }
 
-# Espera em décimos de segundo; devolve sucesso quando nenhuma Lupa está rodando.
+# Waits up to $1 tenths of a second; succeeds once no Lupa process is left.
 wait_gone() {
   for _ in $(seq 1 "$1"); do
     app_running || return 0
@@ -55,41 +76,40 @@ wait_gone() {
   ! app_running
 }
 
-fail() { echo "erro: $*" >&2; exit 1; }
-
-requirement() { codesign -dr - "$1" 2>/dev/null | sed -n 's/^designated => //p'; }
+designated_requirement() { codesign -dr - "$1" 2>/dev/null | sed -n 's/^designated => //p'; }
 
 if $install; then
   dest=/Applications/Lupa.app
-  old_requirement="$( [ -d "$dest" ] && requirement "$dest" || true )"
-  # Fechar antes de trocar: apagar o bundle de um processo vivo deixa a versão velha rodando,
-  # e abrir enquanto ela ainda sai dá o erro -600 do Launch Services.
+  old_requirement="$([ -d "$dest" ] && designated_requirement "$dest" || true)"
+  # Quit first: deleting the bundle of a live process leaves the old build running, and opening
+  # while it is still quitting fails with Launch Services error -600.
   if app_running; then
     pkill -TERM -x Lupa || true
     if ! wait_gone 50; then
-      echo "a Lupa não fechou em 5 s; forçando"
+      echo "Lupa did not quit within 5 s; killing it"
       pkill -KILL -x Lupa || true
-      wait_gone 30 || fail "não consegui fechar a Lupa; saia pelo menu dela e rode de novo"
+      wait_gone 30 || fail "could not quit Lupa; quit it from its menu and run this again"
     fi
-    echo "fechada: a Lupa que estava aberta"
+    echo "quit: the running Lupa"
   fi
   rm -rf "$dest"
-  [ ! -e "$dest" ] || fail "não consegui apagar $dest"
+  [ ! -e "$dest" ] || fail "could not remove $dest"
   ditto "$app" "$dest"
-  cmp -s "$app/Contents/MacOS/Lupa" "$dest/Contents/MacOS/Lupa" || fail "a cópia em $dest não confere com o build"
-  codesign --verify --strict "$dest" || fail "a assinatura de $dest não confere"
-  # O Launch Services guarda em cache o bundle antigo; registrar de novo faz o open achar o novo.
-  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$dest" >/dev/null 2>&1 || true
-  # A permissão fica presa à assinatura antiga quando ela muda: os Ajustes mostram a Lupa
-  # ligada, mas a nova não está autorizada. Zerar faz o macOS perguntar de novo.
-  if [ "$old_requirement" != "$(requirement "$dest")" ]; then
+  cmp -s "$app/Contents/MacOS/Lupa" "$dest/Contents/MacOS/Lupa" || fail "$dest does not match the build"
+  codesign --verify --strict "$dest" || fail "the signature of $dest does not verify"
+  # Launch Services caches the old bundle; re-registering makes `open` pick up the new one.
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+    -f "$dest" >/dev/null 2>&1 || true
+  # Privacy permissions are tied to the code signature. When it changes, System Settings still
+  # shows Lupa as allowed but the new build is not; resetting makes macOS ask again.
+  if [ "$old_requirement" != "$(designated_requirement "$dest")" ]; then
     for service in ScreenCapture Microphone Camera; do
-      tccutil reset "$service" io.github.paulofroes.lupa >/dev/null 2>&1 || true
+      tccutil reset "$service" "$bundle_id" >/dev/null 2>&1 || true
     done
-    echo "assinatura nova: permita a Lupa de novo em Gravação de Tela (só desta vez)"
+    echo "new signature: allow Lupa under Screen Recording again (one time only)"
   fi
   version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$dest/Contents/Info.plist")"
-  echo "instalado: $dest (versão $version, commit $(git rev-parse --short HEAD))"
+  echo "installed: $dest (version $version, commit $(git rev-parse --short HEAD 2>/dev/null || echo unknown))"
   app="$dest"
 fi
 
@@ -103,14 +123,14 @@ if $open_after; then
     fi
     [ "$attempt" -lt 3 ] && sleep 1
   done
-  $opened || fail "não consegui abrir $app_path"
+  $opened || fail "could not open $app_path"
   pid=""
   for _ in $(seq 1 50); do
     pid="$(pgrep -x Lupa | head -1)" && break
     sleep 0.1
   done
-  [ -n "$pid" ] || fail "a Lupa não ficou aberta"
+  [ -n "$pid" ] || fail "Lupa did not stay open"
   running="$(ps -p "$pid" -o comm=)"
-  [ "$running" = "$app_path/Contents/MacOS/Lupa" ] || fail "a Lupa aberta é outra cópia: $running"
-  echo "aberta: $app_path (pid $pid)"
+  [ "$running" = "$app_path/Contents/MacOS/Lupa" ] || fail "a different copy of Lupa is running: $running"
+  echo "running: $app_path (pid $pid)"
 fi

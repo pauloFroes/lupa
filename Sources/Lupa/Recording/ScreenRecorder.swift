@@ -21,8 +21,11 @@ enum RecordingError: LocalizedError {
 ///
 /// Video is written at a constant frame rate: ScreenCaptureKit sends no frames while the screen is
 /// still, so the last frame is repeated to keep editors that dislike VFR happy. Microphone and
-/// system audio go to separate tracks. All writer state is confined to `queue`.
-final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
+/// system audio go to separate tracks.
+///
+/// Thread safety is manual, hence `@unchecked Sendable`: all writer state is confined to `queue`,
+/// and `stream` is only touched from the main actor in `start` and `stop`.
+final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     var onFailure: ((Error) -> Void)?
 
     private let queue = DispatchQueue(label: "io.github.paulofroes.lupa.recorder", qos: .userInitiated)

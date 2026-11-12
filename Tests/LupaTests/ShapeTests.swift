@@ -5,7 +5,7 @@ import Testing
 
 struct ShapeTests {
     @Test(arguments: [
-        (NSEvent.ModifierFlags(), Shape.Kind.freehand),
+        (NSEvent.ModifierFlags(), Shape.Kind.freehand) as (NSEvent.ModifierFlags, Shape.Kind),
         ([.shift], .line),
         ([.control], .rectangle),
         ([.command], .rectangle),
@@ -13,8 +13,8 @@ struct ShapeTests {
         ([.control, .shift], .arrow),
         ([.command, .shift], .arrow),
     ])
-    func modifierSelectsKind(flags: NSEvent.ModifierFlags, kind: Shape.Kind) {
-        #expect(Shape.kind(for: flags) == kind)
+    func modifierSelectsKind(_ testCase: (flags: NSEvent.ModifierFlags, kind: Shape.Kind)) {
+        #expect(Shape.kind(for: testCase.flags) == testCase.kind)
     }
 
     @Test func lineHitTestsNearTheSegmentOnly() {

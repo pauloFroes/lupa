@@ -73,16 +73,14 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
+    @MainActor
     func start(on screen: NSScreen, zoom initialZoom: CGFloat, autoZoom: Bool = false) async throws {
         // Put the (still empty) window on screen before building the filter, so Lupa is guaranteed
         // to be in the application list the filter excludes.
-        let window = await MainActor.run { () -> OverlayWindow in
-            contentLayer.contents = nil
-            let window = OverlayWindow(screen: screen)
-            window.ignoresMouseEvents = true
-            window.orderFrontRegardless()
-            return window
-        }
+        contentLayer.contents = nil
+        let window = OverlayWindow(screen: screen)
+        window.ignoresMouseEvents = true
+        window.orderFrontRegardless()
         do {
             let filter = try await ScreenCapture.filter(for: screen, requireExclusion: true)
             let configuration = ScreenCapture.configuration(for: screen)
@@ -92,14 +90,12 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
             let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
             try await stream.startCapture()
-            await MainActor.run {
-                self.autoZoom = autoZoom
-                self.autoZoomLevel = initialZoom.clamped(Self.zoomRange.lowerBound, Self.zoomRange.upperBound)
-                self.present(in: window, on: screen, stream: stream, zoom: autoZoom ? 1 : initialZoom)
-                if autoZoom { self.startClickMonitors() }
-            }
+            self.autoZoom = autoZoom
+            autoZoomLevel = initialZoom.clamped(Self.zoomRange.lowerBound, Self.zoomRange.upperBound)
+            present(in: window, on: screen, stream: stream, zoom: autoZoom ? 1 : initialZoom)
+            if autoZoom { startClickMonitors() }
         } catch {
-            await MainActor.run { window.orderOut(nil) }
+            window.orderOut(nil)
             throw error
         }
     }

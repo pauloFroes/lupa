@@ -1,6 +1,7 @@
 /* Brazilian Portuguese. Keys are the English source strings; keep them in sync with
    scripts/extract-strings.py --check Resources/pt-BR.lproj/Localizable.strings */
 
+"A ring marks every click in the video." = "Um anel marca cada clique no vídeo.";
 "About Lupa" = "Sobre a Lupa";
 "allow Lupa in Accessibility so pinch does not reach the app below" = "permita a Lupa em Acessibilidade para a pinça não chegar ao app";
 "Allow Lupa in System Settings › Privacy & Security and try again, or turn this option off in the recording panel." = "Ligue a Lupa em Ajustes do Sistema › Privacidade e Segurança e tente de novo, ou desligue essa opção no painel de gravação.";
@@ -43,6 +44,7 @@
 "Cut" = "Recortar";
 "Default" = "Padrão";
 "DEFAULT BREAK" = "INTERVALO PADRÃO";
+"Dodges the mouse and comes back on its own. Hold ⌥ to drag it." = "Sai do caminho do mouse e volta sozinha. Segure ⌥ para arrastar.";
 "done. %@ recorded." = "pronto. %@ gravados.";
 "drag" = "arraste";
 "Draw" = "Desenhar";
@@ -52,6 +54,7 @@
 "erase all" = "apaga tudo";
 "erase one" = "apaga um";
 "eraser" = "borracha";
+"Every click makes a “tick” in the video's audio." = "Cada clique faz um “tec” no áudio do vídeo.";
 "exit" = "sai";
 "FRAME RATE" = "QUADROS POR SEGUNDO";
 "Full screen" = "Tela inteira";
@@ -154,10 +157,12 @@
 "Undo" = "Desfazer";
 "undo" = "desfaz";
 "unknown error" = "erro desconhecido";
+"What plays on the Mac, minus Lupa's own sounds." = "O que toca no Mac, sem os sons da própria Lupa.";
 "Where to save recordings" = "Onde salvar as gravações";
 "white" = "branco";
 "width" = "espessura";
 "Yellow" = "Amarelo";
+"Your voice, on a separate track." = "Sua voz, em uma faixa separada.";
 "Zoom" = "Zoom";
 "zoom" = "zoom";
 "Zoom, annotation, break timer and screen recording for presenters on the Mac." = "Zoom, desenho, cronômetro de intervalo e gravação de tela para quem apresenta no Mac.";

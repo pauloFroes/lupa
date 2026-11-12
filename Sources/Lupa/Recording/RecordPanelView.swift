@@ -15,9 +15,19 @@ struct Microphone: Identifiable, Hashable {
     }
 }
 
+struct Camera: Identifiable, Hashable {
+    let id: String
+    let name: String
+
+    static func available() -> [Camera] {
+        CameraBubble.devices().map { Camera(id: $0.uniqueID, name: $0.localizedName) }
+    }
+}
+
 struct RecordPanelView: View {
     @ObservedObject var prefs: Preferences
     let microphones: [Microphone]
+    let cameras: [Camera]
     let shortcut: String
     let onRecord: () -> Void
     let onCancel: () -> Void
@@ -50,6 +60,13 @@ struct RecordPanelView: View {
         )
     }
 
+    private var cameraID: Binding<String> {
+        Binding(
+            get: { prefs.recording.cameraID ?? "" },
+            set: { prefs.recording.cameraID = $0.isEmpty ? nil : $0 }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .firstTextBaseline) {
@@ -77,6 +94,23 @@ struct RecordPanelView: View {
                 }
                 divider
                 toggleRow("Câmera em bolha", "Desvia do mouse e volta sozinha. Segure ⌥ para arrastar.", isOn: $prefs.recording.camera)
+                if prefs.recording.camera {
+                    HStack(spacing: 14) {
+                        CameraPreview(deviceID: prefs.recording.cameraID)
+                            .frame(width: 104, height: 104)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Picker("", selection: cameraID) {
+                                Text("Automática (câmera do Mac)").tag("")
+                                ForEach(cameras) { camera in Text(camera.name).tag(camera.id) }
+                            }
+                            .labelsHidden()
+                            Text("Prévia: é assim que a bolha entra no vídeo.")
+                                .font(.lupaText(12))
+                                .foregroundColor(Palette.onInkMuted)
+                        }
+                    }
+                    .padding(.bottom, 12)
+                }
                 divider
                 toggleRow("Mostrar cliques", "Um anel marca cada clique no vídeo.", isOn: $prefs.recording.showClicks)
             }

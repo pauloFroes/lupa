@@ -1,16 +1,16 @@
 import AVFoundation
 import SwiftUI
 
-// Nível do microfone no painel de gravação: antes de gravar, dá para ver que a voz está chegando
-// no microfone escolhido. Abre o microfone só enquanto o painel mostra o medidor.
+/// Live input level for the recording panel, so you can check your voice reaches the chosen
+/// microphone before recording. The device is only open while the meter is on screen.
 final class MicrophoneLevel: NSObject, ObservableObject, AVCaptureAudioDataOutputSampleBufferDelegate {
-    // 0…1, já suavizado para a barra não tremer.
+    /// 0…1, smoothed so the bar does not flicker.
     @Published private(set) var level: Double = 0
     @Published private(set) var problem: String?
 
     private let session = AVCaptureSession()
     private let output = AVCaptureAudioDataOutput()
-    private let queue = DispatchQueue(label: "lupa.microphone.meter")
+    private let queue = DispatchQueue(label: "io.github.paulofroes.lupa.microphone-meter")
     private var currentID: String?
     private var wanted: String?
     private var stopped = false
@@ -29,7 +29,7 @@ final class MicrophoneLevel: NSObject, ObservableObject, AVCaptureAudioDataOutpu
                 }
             }
         default:
-            problem = "Sem acesso ao microfone"
+            problem = String(localized: "No microphone access")
         }
     }
 
@@ -38,11 +38,11 @@ final class MicrophoneLevel: NSObject, ObservableObject, AVCaptureAudioDataOutpu
         let session = session
         queue.async {
             session.stopRunning()
-            session.inputs.forEach { session.removeInput($0) }
+            for existing in session.inputs { session.removeInput(existing) }
         }
     }
 
-    // O mesmo aparelho que a gravação usa: o escolhido ou, sem escolha, o padrão do sistema.
+    /// The same device the recording will use: the chosen one, or the system default.
     private func device() -> AVCaptureDevice? {
         if let wanted, let chosen = AVCaptureDevice(uniqueID: wanted), chosen.isConnected { return chosen }
         return AVCaptureDevice.default(for: .audio)
@@ -51,7 +51,7 @@ final class MicrophoneLevel: NSObject, ObservableObject, AVCaptureAudioDataOutpu
     private func connect() {
         guard !stopped else { return }
         guard let device = device() else {
-            problem = "Nenhum microfone"
+            problem = String(localized: "No microphone")
             return
         }
         problem = nil
@@ -62,7 +62,7 @@ final class MicrophoneLevel: NSObject, ObservableObject, AVCaptureAudioDataOutpu
         queue.async { [weak self] in
             guard let self else { return }
             session.beginConfiguration()
-            session.inputs.forEach { session.removeInput($0) }
+            for existing in session.inputs { session.removeInput(existing) }
             if let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) {
                 session.addInput(input)
             }
@@ -75,13 +75,15 @@ final class MicrophoneLevel: NSObject, ObservableObject, AVCaptureAudioDataOutpu
         }
     }
 
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+    func captureOutput(
+        _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection
+    ) {
         let channels = connection.audioChannels
         guard !channels.isEmpty else { return }
-        // averagePowerLevel em dB (0 = máximo). −50 dB vira barra vazia.
+        // averagePowerLevel is in dB (0 = full scale); −50 dB maps to an empty bar.
         let power = Double(channels.map(\.averagePowerLevel).max() ?? -160)
         let target = ((power + 50) / 50).clamped(0, 1)
-        // Sobe rápido e desce devagar, como um VU.
+        // Fast attack, slow release, like a VU meter.
         smoothed = target > smoothed ? target : smoothed * 0.85 + target * 0.15
         let value = smoothed
         DispatchQueue.main.async { [weak self] in self?.level = value }
@@ -116,7 +118,7 @@ struct MicrophoneMeter: View {
             }
         }
         .frame(height: 16)
-        .help("Fale: a barra deve se mexer. Parada, o microfone não está pegando sua voz.")
+        .help("Speak: the bar should move. If it stays still, the microphone is not picking up your voice.")
         .onAppear { model.use(deviceID: deviceID) }
         .onChange(of: deviceID) { _, id in model.use(deviceID: id) }
         .onDisappear { model.stop() }

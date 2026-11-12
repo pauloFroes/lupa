@@ -6,8 +6,8 @@ private final class KeyPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
-// Orquestra a gravação: painel de opções → área (se for o caso) → contagem → gravação →
-// aviso de pronto. O estado aparece na barra de menus pelo `onChange`.
+/// Drives a recording from start to finish: options panel → area selection (if any) →
+/// countdown → recording → "done" panel. State changes are published through `onChange`.
 final class RecordingController {
     enum State {
         case idle
@@ -24,12 +24,8 @@ final class RecordingController {
     }
 
     var onChange: (() -> Void)?
-    // Tela gravada, para o Ao vivo abrir nela.
+    /// The display being recorded, so live zoom can open on it.
     private(set) var screen: NSScreen?
-    // Área gravada, em pontos da tela (nil = tela inteira).
-    private(set) var area: CGRect?
-    var onStarted: (() -> Void)?
-    var onFinished: ((URL, TimeInterval) -> Void)?
     var isRecording: Bool { state == .recording || state == .paused }
     var liveZoomActive = false {
         didSet { recorder?.setLiveCursor(liveZoomActive) }
@@ -47,7 +43,7 @@ final class RecordingController {
     private var selectorWindow: OverlayWindow?
     private var countdownWindow: OverlayWindow?
     private var countdownTimer: Timer?
-    private var previousApp: NSRunningApplication?
+    private var focus = FocusRestorer()
 
     private var startedAt: Date?
     private var pausedAt: Date?
@@ -94,8 +90,7 @@ final class RecordingController {
 
     private func showPanel() {
         closeDonePanel()
-        let front = NSWorkspace.shared.frontmostApplication
-        if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
+        focus.remember()
 
         let view = RecordPanelView(
             prefs: prefs,
@@ -118,7 +113,8 @@ final class RecordingController {
         let host = NSHostingView(rootView: rootView)
         host.layoutSubtreeIfNeeded()
         let size = host.fittingSize
-        let panel = KeyPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+        let panel = KeyPanel(
+            contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -158,11 +154,11 @@ final class RecordingController {
     private func requestDevicePermissions() async -> Bool {
         let options = prefs.recording
         if options.microphone, await !Self.ensureAccess(.audio) {
-            showDeviceAlert("microfone", pane: "Privacy_Microphone")
+            showDeviceAlert(String(localized: "Lupa has no access to the microphone"), pane: "Privacy_Microphone")
             return false
         }
         if options.camera, await !Self.ensureAccess(.video) {
-            showDeviceAlert("câmera", pane: "Privacy_Camera")
+            showDeviceAlert(String(localized: "Lupa has no access to the camera"), pane: "Privacy_Camera")
             return false
         }
         return true
@@ -176,24 +172,27 @@ final class RecordingController {
         }
     }
 
-    private func showDeviceAlert(_ device: String, pane: String) {
+    private func showDeviceAlert(_ message: String, pane: String) {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "A Lupa não tem acesso à \(device)"
-        alert.informativeText = "Ligue a Lupa em Ajustes do Sistema › Privacidade e Segurança e tente de novo, ou desligue essa opção no painel de gravação."
-        alert.addButton(withTitle: "Abrir Ajustes do Sistema")
-        alert.addButton(withTitle: "Agora não")
-        if alert.runModal() == .alertFirstButtonReturn,
-           let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
-            NSWorkspace.shared.open(url)
+        alert.messageText = message
+        alert.informativeText = String(
+            localized:
+                "Allow Lupa in System Settings › Privacy & Security and try again, or turn this option off in the recording panel."
+        )
+        alert.addButton(withTitle: String(localized: "Open System Settings"))
+        alert.addButton(withTitle: String(localized: "Not Now"))
+        if alert.runModal() == .alertFirstButtonReturn {
+            SystemSettings.openPrivacyPane(pane)
         }
     }
 
-    // MARK: - Área e contagem
+    // MARK: - Area and countdown
 
     private func selectArea(on screen: NSScreen) {
         let window = OverlayWindow(screen: screen)
-        let view = AreaSelectorView(frame: NSRect(origin: .zero, size: screen.frame.size), previous: prefs.recording.lastArea)
+        let view = AreaSelectorView(
+            frame: NSRect(origin: .zero, size: screen.frame.size), previous: prefs.recording.lastArea)
         view.onFinish = { [weak self] rect in
             self?.selectorWindow?.orderOut(nil)
             self?.selectorWindow = nil
@@ -214,7 +213,11 @@ final class RecordingController {
     private func countdown(screen: NSScreen, area: CGRect?) {
         if prefs.recording.camera {
             camera.onMove = { [weak self] origin in self?.prefs.recording.cameraOrigin = origin }
-            try? camera.show(on: screen, at: prefs.recording.cameraOrigin, cameraID: prefs.recording.cameraID)
+            do {
+                try camera.show(on: screen, at: prefs.recording.cameraOrigin, cameraID: prefs.recording.cameraID)
+            } catch {
+                Log.recording.error("Camera bubble failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
         let window = OverlayWindow(screen: screen)
         window.ignoresMouseEvents = true
@@ -234,7 +237,7 @@ final class RecordingController {
             timer.invalidate()
             self?.countdownWindow?.orderOut(nil)
             self?.countdownWindow = nil
-            // Um respiro para a janela da contagem sumir da tela antes do primeiro quadro.
+            // Give the countdown window a moment to leave the screen before the first frame.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 self?.startRecording(screen: screen, area: area)
             }
@@ -255,7 +258,7 @@ final class RecordingController {
         restoreFrontApp()
     }
 
-    // MARK: - Gravação
+    // MARK: - Recording
 
     private func startRecording(screen: NSScreen, area: CGRect?) {
         guard state == .preparing else { return }
@@ -273,17 +276,15 @@ final class RecordingController {
         let excluded = controlBar.windowID.map { [$0] } ?? []
         Task { @MainActor in
             do {
-                // Um respiro para o macOS listar a barra antes do filtro que a exclui.
+                // Give macOS a moment to list the control bar before building the filter that excludes it.
                 try? await Task.sleep(nanoseconds: 100_000_000)
                 try await recorder.start(screen: screen, area: area, options: options, excluding: excluded)
                 recorder.setLiveCursor(self.liveZoomActive)
                 self.screen = screen
-                self.area = area
                 self.startedAt = Date()
                 self.pausedAt = nil
                 self.pausedTotal = 0
                 self.state = .recording
-                self.onStarted?()
             } catch {
                 self.fail(error)
             }
@@ -301,7 +302,6 @@ final class RecordingController {
                 self.camera.hide()
                 self.resetClock()
                 self.state = .idle
-                self.onFinished?(url, duration)
                 self.showDonePanel(url: url, duration: duration)
             } catch {
                 self.fail(error)
@@ -310,6 +310,7 @@ final class RecordingController {
     }
 
     private func fail(_ error: Error) {
+        Log.recording.error("Recording stopped: \(error.localizedDescription, privacy: .public)")
         let recorder = recorder
         self.recorder = nil
         camera.hide()
@@ -319,7 +320,7 @@ final class RecordingController {
             _ = try? await recorder?.stop()
             NSApp.activate(ignoringOtherApps: true)
             let alert = NSAlert()
-            alert.messageText = "a gravação parou"
+            alert.messageText = String(localized: "The recording stopped")
             alert.informativeText = error.localizedDescription
             alert.runModal()
         }
@@ -352,11 +353,10 @@ final class RecordingController {
     }
 
     private func restoreFrontApp() {
-        previousApp?.activate(options: [])
-        previousApp = nil
+        focus.restore()
     }
 
-    // MARK: - Pronto
+    // MARK: - Done panel
 
     private func showDonePanel(url: URL, duration: TimeInterval) {
         closeDonePanel()

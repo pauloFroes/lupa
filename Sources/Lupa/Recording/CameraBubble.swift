@@ -1,38 +1,40 @@
 import AVFoundation
 import AppKit
 
-// Bolha da câmera que entra na gravação. Fica acima da sobreposição de zoom e desenho
-// (screenSaver + 1) para continuar no vídeo quando você aproxima a tela.
-// Quando o mouse de fato vai até a bolha (segue na direção dela, para em cima ou perto dela por
-// um instante), ela desliza devagar para o canto oposto; passar por perto não a move. No canto
-// oposto ela só sai em dois casos: o mouse vai até ela de novo, ou passaram `awayStay` segundos
-// e o mouse está fora da zona que a fez fugir. Segurar ⌥ deixa a bolha parada para arrastar.
+/// The round camera overlay that is recorded along with the screen. It sits above the zoom and
+/// drawing overlays (`.screenSaver + 1`) so it stays in the video while you zoom.
+///
+/// When the mouse actually heads for the bubble (moves towards it, or rests on or right next to
+/// it for a moment), the bubble glides to the mirrored spot on the other side; merely passing by
+/// does not move it. From there it only returns when the mouse heads for it again, or after
+/// `awayStay` seconds once the mouse has left the area that chased it away. Holding ⌥ pins the
+/// bubble so it can be dragged.
 final class CameraBubble {
     private var panel: NSPanel?
     private let session = AVCaptureSession()
-    private let sessionQueue = DispatchQueue(label: "lupa.camera")
+    private let sessionQueue = DispatchQueue(label: "io.github.paulofroes.lupa.camera")
     private static let diameter: CGFloat = 220
     private static let margin: CGFloat = 32
-    // Só dentro desta distância da borda o movimento do mouse conta como ir até a bolha.
+    /// Only within this distance from the edge does mouse movement count as heading for the bubble.
     private static let approachDistance: CGFloat = 90
-    // Parado (ou quase) a esta distância da borda, o mouse também quer o lugar dela.
+    /// A (nearly) resting mouse this close to the edge also wants the bubble's spot.
     private static let restDistance: CGFloat = 30
-    // A intenção precisa durar isto para a bolha se mexer: uma passada rápida não conta.
+    /// Intent must last this long before the bubble moves, so a quick pass does not count.
     private static let intentHold: CFTimeInterval = 0.3
-    // No lugar de fuga a bolha fica pelo menos isto. Antes disso só sai se o mouse for até ela.
+    /// Minimum stay at the away spot, unless the mouse heads for the bubble again.
     private static let awayStay: CFTimeInterval = 8
-    // Depois desse tempo, volta se o mouse estiver além desta distância do lugar original
-    // (fora da zona que a fez fugir) por `returnHold`.
+    /// After `awayStay`, the bubble returns once the mouse has been this far from the home spot
+    /// for `returnHold`.
     private static let returnDistance: CGFloat = 200
     private static let returnHold: CFTimeInterval = 1.0
 
     private var screen: NSScreen?
     private var timer: Timer?
     private var lastTick: CFTimeInterval = 0
-    // Lugar escolhido (origem da janela); muda quando você arrasta a bolha.
+    /// The chosen spot (window origin); changes when the bubble is dragged.
     private var home: CGPoint = .zero
     private var isAway = false
-    // Mais lenta que o cursor: a bolha desliza, não salta.
+    // Slower than the cursor: the bubble glides rather than jumps.
     private var springX = Spring(value: 0, response: 0.9)
     private var springY = Spring(value: 0, response: 0.9)
     private var mouseVelocity = CGVector.zero
@@ -42,19 +44,19 @@ final class CameraBubble {
     private var movedAt: CFTimeInterval = 0
     private var lastSetOrigin: CGPoint = .zero
     private var isDragging = false
-    // Avisa o novo lugar escolhido (arrastando), para a próxima gravação começar nele.
+    /// Reports a new home spot after a drag, so the next recording starts there.
     var onMove: ((CGPoint) -> Void)?
 
     func show(on screen: NSScreen, at savedOrigin: CGPoint? = nil, cameraID: String? = nil) throws {
         guard panel == nil else { return }
         guard let device = Self.pickCamera(id: cameraID) else { return }
         let input = try AVCaptureDeviceInput(device: device)
-        // Configura na mesma fila do `hide()`: senão a limpeza da gravação anterior, ainda na
-        // fila, tira a entrada recém-posta e a bolha fica preta.
+        // Configure on the same queue as `hide()`. Otherwise the previous recording's teardown,
+        // still queued, would remove the freshly added input and leave the bubble black.
         let session = session
         sessionQueue.sync {
             session.beginConfiguration()
-            session.inputs.forEach { session.removeInput($0) }
+            for existing in session.inputs { session.removeInput(existing) }
             session.sessionPreset = .high
             if session.canAddInput(input) { session.addInput(input) }
             session.commitConfiguration()
@@ -71,7 +73,8 @@ final class CameraBubble {
             let saved = NSRect(origin: savedOrigin, size: frame.size)
             if screen.visibleFrame.contains(saved) { frame = saved }
         }
-        let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let panel = NSPanel(
+            contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -116,11 +119,11 @@ final class CameraBubble {
         let session = session
         sessionQueue.async {
             session.stopRunning()
-            session.inputs.forEach { session.removeInput($0) }
+            for existing in session.inputs { session.removeInput(existing) }
         }
     }
 
-    // Câmeras que dá para escolher no painel de gravação.
+    /// Cameras offered in the recording panel.
     static func devices() -> [AVCaptureDevice] {
         AVCaptureDevice.DiscoverySession(
             deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera, .deskViewCamera],
@@ -129,9 +132,8 @@ final class CameraBubble {
         ).devices.filter(\.isConnected)
     }
 
-    // A câmera escolhida no painel; sem escolha (ou se ela sumiu), a câmera do Mac primeiro: o
-    // padrão do sistema pode ser uma câmera virtual (Camo) ou o iPhone, que ficam pretos quando
-    // não estão transmitindo.
+    /// The camera chosen in the panel. Without a choice (or if it is gone) the built-in camera
+    /// wins: the system default may be a virtual camera or an iPhone, which show black when idle.
     static func pickCamera(id: String?) -> AVCaptureDevice? {
         if let id, let chosen = AVCaptureDevice(uniqueID: id), chosen.isConnected, !chosen.isSuspended {
             return chosen
@@ -143,7 +145,7 @@ final class CameraBubble {
             ?? AVCaptureDevice.default(for: .video)
     }
 
-    // MARK: - Desvio do mouse
+    // MARK: - Dodging the mouse
 
     private func startTracking() {
         timer?.invalidate()
@@ -160,7 +162,7 @@ final class CameraBubble {
         lastTick = now
         let mouse = NSEvent.mouseLocation
 
-        // Arrasto: a janela se move sozinha; ao soltar, o novo lugar vira o lugar da bolha.
+        // While dragging, the window moves itself; on release the new spot becomes home.
         let pressed = NSEvent.pressedMouseButtons & 1 != 0
         if pressed {
             if !isDragging, !panel.ignoresMouseEvents, panel.frame.contains(mouse) { isDragging = true }
@@ -176,7 +178,7 @@ final class CameraBubble {
             setOrigin(origin)
             return
         }
-        // Se algo moveu a janela por fora, adota a posição sem brigar.
+        // If something else moved the window, adopt the new position instead of fighting it.
         if panel.frame.origin != lastSetOrigin, !isAway {
             home = panel.frame.origin
             springX.snap(to: home.x)
@@ -194,7 +196,7 @@ final class CameraBubble {
             decide(mouse: mouse, away: away, now: now)
         }
 
-        // Enquanto desliza, o clique passa para o app embaixo, e ela não é agarrada no meio do caminho.
+        // While gliding, clicks pass through to the app below and the bubble cannot be grabbed mid-flight.
         let moving = !(springX.isSettled && springY.isSettled)
         if panel.ignoresMouseEvents != moving { panel.ignoresMouseEvents = moving }
 
@@ -211,7 +213,7 @@ final class CameraBubble {
         defer { lastMouse = mouse }
         guard let last = lastMouse, dt > 0 else { return }
         let instant = CGVector(dx: (mouse.x - last.x) / dt, dy: (mouse.y - last.y) / dt)
-        // Média móvel de ~80 ms: tira o tremor sem atrasar a leitura da direção.
+        // ~80 ms exponential moving average: removes jitter without delaying the heading.
         let a = CGFloat(1 - exp(-dt / 0.08))
         mouseVelocity.dx += (instant.dx - mouseVelocity.dx) * a
         mouseVelocity.dy += (instant.dy - mouseVelocity.dy) * a
@@ -222,8 +224,9 @@ final class CameraBubble {
         let other = isAway ? home : away
         let stayedLongEnough = now - movedAt > Self.awayStay
 
-        // O mouse quer o lugar onde a bolha está agora: ela vai para o outro, se ele estiver livre.
-        if wantsSpot(mouse: mouse, bubbleAt: occupied), distance(from: mouse, toBubbleAt: other) > Self.approachDistance {
+        // The mouse wants the bubble's current spot: move to the other one if that is free.
+        if wantsSpot(mouse: mouse, bubbleAt: occupied), distance(from: mouse, toBubbleAt: other) > Self.approachDistance
+        {
             let since = intentSince ?? now
             intentSince = since
             if now - since >= Self.intentHold { move(away: !isAway, now: now) }
@@ -231,7 +234,7 @@ final class CameraBubble {
             intentSince = nil
         }
 
-        // Fora do lugar, só volta sozinha depois de `awayStay` e com o mouse fora da zona original.
+        // Away from home, return only after `awayStay` and with the mouse clear of the home area.
         if isAway, distance(from: mouse, toBubbleAt: home) > Self.returnDistance {
             let since = clearSince ?? now
             clearSince = since
@@ -248,12 +251,12 @@ final class CameraBubble {
         clearSince = nil
     }
 
-    // Intenção de ir até a bolha: em cima dela, parado bem perto, ou vindo na direção dela.
+    /// Intent to reach the bubble: on top of it, resting right next to it, or heading towards it.
     private func wantsSpot(mouse: CGPoint, bubbleAt origin: CGPoint) -> Bool {
         let d = distance(from: mouse, toBubbleAt: origin)
         if d > Self.approachDistance { return false }
         let speed = hypot(mouseVelocity.dx, mouseVelocity.dy)
-        // Cruzando a bolha depressa é passagem, não intenção.
+        // Crossing the bubble quickly is passing through, not intent.
         if d <= 0 { return speed < 600 }
         if speed < 60 { return d < Self.restDistance }
         let radius = Self.diameter / 2
@@ -261,7 +264,7 @@ final class CameraBubble {
         let toCenter = CGVector(dx: center.x - mouse.x, dy: center.y - mouse.y)
         let length = max(1, hypot(toCenter.dx, toCenter.dy))
         let heading = (mouseVelocity.dx * toCenter.dx + mouseVelocity.dy * toCenter.dy) / (speed * length)
-        // Seguindo assim por 0,3 s, o mouse chega à bolha.
+        // Keeping this course for 0.3 s brings the mouse to the bubble.
         let ahead = CGPoint(x: mouse.x + mouseVelocity.dx * 0.3, y: mouse.y + mouseVelocity.dy * 0.3)
         return heading > 0.6 && distance(from: ahead, toBubbleAt: origin) < d
     }
@@ -271,14 +274,14 @@ final class CameraBubble {
         if panel?.frame.origin != origin { panel?.setFrameOrigin(origin) }
     }
 
-    // Distância do mouse até a borda da bolha com origem em `origin` (negativa dentro dela).
+    /// Distance from the mouse to the edge of a bubble at `origin` (negative inside it).
     private func distance(from mouse: CGPoint, toBubbleAt origin: CGPoint) -> CGFloat {
         let radius = Self.diameter / 2
         let center = CGPoint(x: origin.x + radius, y: origin.y + radius)
         return hypot(mouse.x - center.x, mouse.y - center.y) - radius
     }
 
-    // Lugar de fuga: espelho do lugar original no lado mais distante da tela.
+    /// The away spot: home mirrored to the far side of the screen.
     private func awayOrigin() -> CGPoint {
         guard let frame = screen?.visibleFrame else { return home }
         let size = Self.diameter
@@ -286,7 +289,8 @@ final class CameraBubble {
         let mirroredY = frame.minY + frame.maxY - size - home.y
         let dx = abs(mirroredX - home.x)
         let dy = abs(mirroredY - home.y)
-        let point = dx >= size + Self.approachDistance || dx >= dy
+        let point =
+            dx >= size + Self.approachDistance || dx >= dy
             ? CGPoint(x: mirroredX, y: home.y)
             : CGPoint(x: home.x, y: mirroredY)
         return clamped(point)

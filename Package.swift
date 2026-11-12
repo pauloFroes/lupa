@@ -9,7 +9,13 @@ let package = Package(
             name: "Lupa",
             path: "Sources/Lupa"
         ),
+        .testTarget(
+            name: "LupaTests",
+            dependencies: ["Lupa"],
+            path: "Tests/LupaTests"
+        ),
     ],
-    // O AppKit e o ScreenCaptureKit ainda não estão prontos para o modo estrito do Swift 6.
+    // AppKit, AVFoundation and ScreenCaptureKit callbacks are not yet annotated for Swift 6 strict
+    // concurrency. The app stays in the Swift 5 language mode until that migration is done.
     swiftLanguageModes: [.v5]
 )

@@ -2,28 +2,6 @@ import AVFoundation
 import AppKit
 import SwiftUI
 
-struct Microphone: Identifiable, Hashable {
-    let id: String
-    let name: String
-
-    static func available() -> [Microphone] {
-        AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.microphone, .external],
-            mediaType: .audio,
-            position: .unspecified
-        ).devices.map { Microphone(id: $0.uniqueID, name: $0.localizedName) }
-    }
-}
-
-struct Camera: Identifiable, Hashable {
-    let id: String
-    let name: String
-
-    static func available() -> [Camera] {
-        CameraBubble.devices().map { Camera(id: $0.uniqueID, name: $0.localizedName) }
-    }
-}
-
 struct RecordPanelView: View {
     @ObservedObject var prefs: Preferences
     let microphones: [Microphone]
@@ -70,7 +48,7 @@ struct RecordPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .firstTextBaseline) {
-                Text("gravar a tela")
+                Text("record screen")
                     .font(Font(Theme.display(28, .semibold) as CTFont))
                     .tracking(-0.6)
                 Spacer()
@@ -78,15 +56,20 @@ struct RecordPanelView: View {
                     .font(.lupaMono(13))
                     .foregroundColor(Palette.lime)
             }
-            Segmented(options: ["Tela inteira", "Área"], selection: sourceIndex, onInk: true)
+            Segmented(
+                options: [String(localized: "Full screen"), String(localized: "Area")], selection: sourceIndex,
+                onInk: true
+            )
 
             VStack(spacing: 0) {
-                toggleRow("Som do sistema", "O que toca no Mac, sem o som da Lupa.", isOn: $prefs.recording.systemAudio)
+                toggleRow(
+                    "System audio", "What plays on the Mac, minus Lupa's own sounds.",
+                    isOn: $prefs.recording.systemAudio)
                 divider
-                toggleRow("Microfone", "Sua voz numa faixa separada.", isOn: $prefs.recording.microphone)
+                toggleRow("Microphone", "Your voice, on a separate track.", isOn: $prefs.recording.microphone)
                 if prefs.recording.microphone {
                     Picker("", selection: microphoneID) {
-                        Text("Padrão do sistema").tag("")
+                        Text("System default").tag("")
                         ForEach(microphones) { mic in Text(mic.name).tag(mic.id) }
                     }
                     .labelsHidden()
@@ -95,18 +78,20 @@ struct RecordPanelView: View {
                         .padding(.bottom, 12)
                 }
                 divider
-                toggleRow("Câmera em bolha", "Desvia do mouse e volta sozinha. Segure ⌥ para arrastar.", isOn: $prefs.recording.camera)
+                toggleRow(
+                    "Camera bubble", "Dodges the mouse and comes back on its own. Hold ⌥ to drag it.",
+                    isOn: $prefs.recording.camera)
                 if prefs.recording.camera {
                     HStack(spacing: 14) {
                         CameraPreview(deviceID: prefs.recording.cameraID)
                             .frame(width: 104, height: 104)
                         VStack(alignment: .leading, spacing: 6) {
                             Picker("", selection: cameraID) {
-                                Text("Automática (câmera do Mac)").tag("")
+                                Text("Automatic (built-in camera)").tag("")
                                 ForEach(cameras) { camera in Text(camera.name).tag(camera.id) }
                             }
                             .labelsHidden()
-                            Text("Prévia: é assim que a bolha entra no vídeo.")
+                            Text("Preview: this is how the bubble will look in the video.")
                                 .font(.lupaText(12))
                                 .foregroundColor(Palette.onInkMuted)
                         }
@@ -114,25 +99,27 @@ struct RecordPanelView: View {
                     .padding(.bottom, 12)
                 }
                 divider
-                toggleRow("Mostrar cliques", "Um anel marca cada clique no vídeo.", isOn: $prefs.recording.showClicks)
+                toggleRow("Show clicks", "A ring marks every click in the video.", isOn: $prefs.recording.showClicks)
                 divider
-                toggleRow("Som do clique", "Cada clique faz um “tec” no áudio do vídeo.", isOn: $prefs.recording.recordsClickSounds)
+                toggleRow(
+                    "Click sound", "Every click makes a “tick” in the video's audio.",
+                    isOn: $prefs.recording.recordsClickSounds)
             }
             .padding(.horizontal, 14)
             .background(RoundedRectangle(cornerRadius: 12).fill(Palette.inkRaised))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.inkBorder, lineWidth: 1))
 
             VStack(alignment: .leading, spacing: 8) {
-                eyebrow("QUALIDADE")
+                eyebrow("QUALITY")
                 Segmented(options: RecordingOptions.Quality.allCases.map(\.label), selection: qualityIndex, onInk: true)
             }
             VStack(alignment: .leading, spacing: 8) {
-                eyebrow("QUADROS POR SEGUNDO")
+                eyebrow("FRAME RATE")
                 Segmented(options: ["30 fps", "60 fps"], selection: fpsIndex, onInk: true)
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                eyebrow("SALVAR EM")
+                eyebrow("SAVE TO")
                 HStack(spacing: 10) {
                     Image(systemName: "folder")
                         .font(.system(size: 13, weight: .medium))
@@ -144,13 +131,13 @@ struct RecordPanelView: View {
                         .help(folder.path)
                     Spacer()
                     if prefs.recording.folderPath != nil {
-                        Button("Padrão") { prefs.recording.folderPath = nil }
+                        Button("Default") { prefs.recording.folderPath = nil }
                             .buttonStyle(.plain)
                             .font(.lupaText(12))
                             .foregroundColor(Palette.onInkMuted)
-                            .help("Voltar para Filmes › Lupa")
+                            .help("Go back to Movies › Lupa")
                     }
-                    Button("Alterar…", action: chooseFolder)
+                    Button("Change…", action: chooseFolder)
                         .buttonStyle(.plain)
                         .font(.lupaText(13, .semibold))
                         .foregroundColor(Palette.lime)
@@ -163,13 +150,13 @@ struct RecordPanelView: View {
 
             HStack(spacing: 10) {
                 Spacer()
-                Button("Cancelar", action: onCancel)
+                Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)
                     .buttonStyle(GhostOnInkStyle())
                 Button(action: onRecord) {
                     HStack(spacing: 8) {
                         Circle().fill(Color(nsColor: Theme.danger)).frame(width: 10, height: 10)
-                        Text("Gravar")
+                        Text("Record")
                     }
                 }
                 .keyboardShortcut(.defaultAction)
@@ -187,14 +174,14 @@ struct RecordPanelView: View {
 
     private func chooseFolder() {
         let panel = NSOpenPanel()
-        panel.title = "Onde salvar as gravações"
-        panel.prompt = "Escolher"
+        panel.title = String(localized: "Where to save recordings")
+        panel.prompt = String(localized: "Choose")
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
         panel.directoryURL = folder
-        // O painel de gravação é flutuante: o seletor precisa ficar acima dele.
+        // The recording panel floats, so the picker has to sit above it.
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -205,27 +192,28 @@ struct RecordPanelView: View {
         Rectangle().fill(Palette.inkBorder).frame(height: 1)
     }
 
-    private func eyebrow(_ text: String) -> some View {
+    private func eyebrow(_ text: LocalizedStringKey) -> some View {
         Text(text)
             .font(.lupaMono(11, .medium))
             .tracking(1.3)
             .foregroundColor(Palette.onInkMuted)
     }
 
-    private func toggleRow(_ title: String, _ detail: String, isOn: Binding<Bool>) -> some View {
+    private func toggleRow(_ title: LocalizedStringKey, _ detail: LocalizedStringKey, isOn: Binding<Bool>) -> some View
+    {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.lupaText(14, .semibold))
                 Text(detail).font(.lupaText(12)).foregroundColor(Palette.onInkMuted)
             }
             Spacer()
-            LimeToggle(isOn: isOn.wrappedValue) { isOn.wrappedValue.toggle() }
+            LimeToggle(label: title, isOn: isOn.wrappedValue) { isOn.wrappedValue.toggle() }
         }
         .padding(.vertical, 10)
     }
 }
 
-private struct GhostOnInkStyle: ButtonStyle {
+struct GhostOnInkStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.lupaText(14, .semibold))
@@ -237,8 +225,8 @@ private struct GhostOnInkStyle: ButtonStyle {
     }
 }
 
-// CTA lime com a sombra dura olive: no clique ela cai de 6 para 2 px e o botão "afunda".
-private struct PrimaryOnInkStyle: ButtonStyle {
+/// Lime call to action with a hard olive shadow that drops from 6 to 2 pt on press.
+struct PrimaryOnInkStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let shadow: CGFloat = configuration.isPressed ? 2 : 6
         configuration.label
@@ -253,47 +241,5 @@ private struct PrimaryOnInkStyle: ButtonStyle {
                 }
             )
             .offset(x: configuration.isPressed ? 4 : 0, y: configuration.isPressed ? 4 : 0)
-    }
-}
-
-struct RecordingDoneView: View {
-    let fileName: String
-    let folder: String
-    let duration: String
-    let onOpen: () -> Void
-    let onReveal: () -> Void
-    let onClose: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("pronto. \(duration) gravados.")
-                    .font(Font(Theme.display(20, .semibold) as CTFont))
-                Spacer()
-                Button(action: onClose) {
-                    Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(Palette.onInkMuted)
-                .accessibilityLabel("Fechar")
-            }
-            Text("salvo em \(folder)")
-                .font(.lupaText(13))
-                .foregroundColor(Palette.onInkMuted)
-            Text(fileName)
-                .font(.lupaMono(12))
-                .foregroundColor(Palette.onInkText)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            HStack(spacing: 10) {
-                Button("Mostrar no Finder", action: onReveal).buttonStyle(GhostOnInkStyle())
-                Button("Abrir", action: onOpen).buttonStyle(PrimaryOnInkStyle())
-            }
-        }
-        .padding(20)
-        .frame(width: 380)
-        .foregroundColor(Palette.paper)
-        .background(RoundedRectangle(cornerRadius: 18).fill(Palette.ink))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.inkBorder, lineWidth: 1))
     }
 }

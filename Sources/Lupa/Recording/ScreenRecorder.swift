@@ -235,14 +235,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         guard writer.canAdd(video) else { throw RecordingError.writerFailed("vídeo recusado") }
         writer.add(video)
 
-        if options.systemAudio {
-            let audio = AVAssetWriterInput(mediaType: .audio, outputSettings: Self.audioSettings(channels: 2, bitRate: 256_000))
-            audio.expectsMediaDataInRealTime = true
-            if writer.canAdd(audio) {
-                writer.add(audio)
-                systemAudioInput = audio
-            }
-        }
+        // O microfone é a primeira faixa de áudio: players e editores que tocam só uma faixa
+        // tocam a voz, e não o som do Mac (muitas vezes mudo).
         // O microfone chega com o número de canais do aparelho, que só se conhece no primeiro
         // buffer; a faixa é declarada mono e o conversor do writer ajusta.
         if options.microphone {
@@ -251,6 +245,14 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
             if writer.canAdd(mic) {
                 writer.add(mic)
                 microphoneInput = mic
+            }
+        }
+        if options.systemAudio {
+            let audio = AVAssetWriterInput(mediaType: .audio, outputSettings: Self.audioSettings(channels: 2, bitRate: 256_000))
+            audio.expectsMediaDataInRealTime = true
+            if writer.canAdd(audio) {
+                writer.add(audio)
+                systemAudioInput = audio
             }
         }
 

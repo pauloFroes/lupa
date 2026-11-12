@@ -90,7 +90,9 @@ struct RecordPanelView: View {
                         ForEach(microphones) { mic in Text(mic.name).tag(mic.id) }
                     }
                     .labelsHidden()
-                    .padding(.bottom, 10)
+                    MicrophoneMeter(deviceID: prefs.recording.microphoneID)
+                        .padding(.top, 8)
+                        .padding(.bottom, 12)
                 }
                 divider
                 toggleRow("Câmera em bolha", "Desvia do mouse e volta sozinha. Segure ⌥ para arrastar.", isOn: $prefs.recording.camera)

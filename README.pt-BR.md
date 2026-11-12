@@ -161,11 +161,42 @@ tccutil reset ScreenCapture io.github.paulofroes.lupa
 Para assinar com um certificado da Apple, exporte `LUPA_SIGN_IDENTITY="Apple Development: …"`
 antes do script; `LUPA_SIGN_IDENTITY=-` assina ad hoc.
 
-## Privacidade
+## Segurança e privacidade
 
-A Lupa não acessa a rede. As fotos da tela usadas no zoom e no desenho ficam só na memória; nada
-vai para o disco, a não ser que você salve uma imagem ou grave um vídeo, e as gravações vão só
-para a pasta que você escolher.
+A Lupa pede permissões amplas, então aqui está exatamente o que ela faz com elas. Tudo abaixo pode
+ser conferido no código.
+
+- **Sem acesso à rede.** A Lupa não faz nenhuma requisição de rede: sem telemetria, sem análise de
+  uso, sem checagem de atualização. Nada do que você captura ou grava sai do seu Mac.
+- **Sem código de terceiros.** O pacote não tem dependências; a Lupa usa só frameworks da Apple.
+- **A tela fica no seu Mac.** As fotos da tela usadas no zoom e no desenho ficam na memória.
+  Arquivos só são gravados quando você pede: imagens salvas vão para a Mesa, gravações para
+  `~/Movies/Lupa` ou para a pasta que você escolher. O único arquivo que a Lupa apaga é o vídeo
+  incompleto de uma gravação que falhou.
+- **Sem monitorar o teclado.** Os atalhos são registrados pela API de atalhos do sistema, então a
+  Lupa só recebe os atalhos que você definiu. Ela nunca vê as outras teclas.
+- **Cliques do mouse só são observados.** O zoom no clique, o som do clique e o cursor do zoom ao
+  vivo acompanham os botões do mouse por escutas só de leitura, que não conseguem bloquear nem
+  alterar eventos, e nunca guardam onde você clicou. O zoom ao vivo é o único recurso que consome
+  entrada, e só a pinça e o `⌃` + rolar, enquanto está ligado. As escutas são removidas quando o
+  recurso para.
+- **Logs sem conteúdo.** A Lupa registra estado interno (nível de zoom, registro de atalhos, erros)
+  no log unificado do sistema. Nunca registra teclas, texto ou conteúdo da tela.
+- **Dispositivos só quando você liga.** Microfone e câmera só são pedidos quando ligados no painel
+  de gravação. Abrir ao iniciar a sessão vem desligado e usa a API de itens de login do sistema.
+- **Uma API privada.** Esconder o cursor no zoom ao vivo usa uma chamada privada do WindowServer,
+  resolvida em tempo de execução. Ela só muda a visibilidade do cursor na conexão da própria Lupa;
+  veja a seção [Development](README.md#development) do README em inglês.
+- **Certificado autoassinado.** O `build-app.sh` cria no chaveiro um certificado que serve só para
+  assinar código (veja [Permissões](#permissões)). Ele não é confiável como raiz nem para TLS, e
+  só o `codesign` pode usar a chave. Você pode apagá-lo no Acesso às Chaves quando quiser.
+- **Sem notarização.** A Lupa não é notarizada pela Apple. Compilar a partir do código, como em
+  [Instalação](#instalação), permite revisar exatamente o que roda.
+
+Para remover tudo, feche a Lupa, apague `/Applications/Lupa.app` e rode
+`tccutil reset All io.github.paulofroes.lupa`.
+
+Achou uma vulnerabilidade? Reporte de forma privada, como descrito no [SECURITY.md](SECURITY.md).
 
 ## Desenvolvimento
 

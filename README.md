@@ -161,11 +161,42 @@ tccutil reset ScreenCapture io.github.paulofroes.lupa
 To sign with an Apple certificate instead, export `LUPA_SIGN_IDENTITY="Apple Development: …"`
 before running the script; `LUPA_SIGN_IDENTITY=-` signs ad hoc.
 
-## Privacy
+## Security and privacy
 
-Lupa makes no network requests. Screenshots used for zoom and drawing stay in memory; nothing is
-written to disk unless you save an image or record a video, and recordings go only to the folder
-you choose.
+Lupa asks for broad permissions, so here is exactly what it does with them. Every claim below can
+be checked in the source.
+
+- **No network access.** Lupa makes no network requests: no telemetry, no analytics, no update
+  checks. Nothing you capture or record leaves your Mac.
+- **No third-party code.** The package has no dependencies; Lupa links only Apple frameworks.
+- **Screen content stays local.** Screenshots used for zoom and drawing live in memory. Files are
+  written only when you ask: saved images go to the Desktop, recordings to `~/Movies/Lupa` or the
+  folder you choose. The only file Lupa ever deletes is the partial video of a recording that
+  failed.
+- **No keyboard monitoring.** Shortcuts are registered with the system hot key API, so Lupa only
+  receives the shortcuts you assign. It never sees other keystrokes.
+- **Mouse clicks are only observed.** Click-to-zoom, the click sound and the live zoom cursor
+  watch mouse buttons through listen-only event taps or monitors, which cannot block or change
+  events, and never store where you click. Live zoom is the only
+  feature that consumes input, and only pinch gestures and `⌃`-scroll while it is on. Taps are
+  torn down when the feature stops.
+- **Logs hold no content.** Lupa logs internal state (zoom level, hot key registration, errors) to
+  the unified log. It never logs keystrokes, text or screen content.
+- **Opt-in device access.** Microphone and camera are requested only when you turn them on in the
+  recording panel. Open at login stays off until you enable it, and uses the system login item API.
+- **One private API.** Hiding the cursor during live zoom uses a private WindowServer call,
+  resolved at run time. It only toggles cursor visibility for Lupa's own connection; see
+  [Development](#development).
+- **Self-signed certificate.** `build-app.sh` creates a code-signing-only certificate in your
+  login keychain (see [Permissions](#permissions)). It is not trusted as a root or for TLS, and
+  only `codesign` may use its key. You can delete it in Keychain Access at any time.
+- **Not notarized.** Lupa is not notarized by Apple. Building from source, as described in
+  [Install](#install), lets you review exactly what runs.
+
+To remove every trace, quit Lupa, delete `/Applications/Lupa.app` and run
+`tccutil reset All io.github.paulofroes.lupa`.
+
+Found a vulnerability? Please report it privately as described in [SECURITY.md](SECURITY.md).
 
 ## Development
 

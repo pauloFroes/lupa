@@ -52,6 +52,7 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     private(set) var autoZoom = false
     private var autoZoomLevel: CGFloat = 2
     private var clickMonitors: [Any] = []
+    private let clickTap = ClickTap()
     private var lastActivity: CFTimeInterval = 0
     private var lastMouse = CGPoint.zero
     static let autoZoomIdle: CFTimeInterval = 2.5
@@ -172,26 +173,35 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         stopClickMonitors()
         lastActivity = CACurrentMediaTime()
         lastMouse = NSEvent.mouseLocation
-        // O clique passa pela janela do zoom e vai para os apps; o monitor global o enxerga.
-        // Cliques nas janelas da própria Lupa (barra de gravação, bolha) não dão zoom.
+        // O clique passa pela janela do zoom e vai para os apps. Um event tap só de escuta é o
+        // caminho principal: o monitor global do NSEvent às vezes deixa de entregar cliques no meio
+        // da gravação (visto no macOS 26). Sem Acessibilidade, o tap não abre e o monitor assume.
+        if clickTap.start(onClick: { [weak self] fn in self?.clickArrived(fn: fn) }) {
+            Self.clickLog.notice("clique pelo event tap")
+            return
+        }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] event in
-            // fn+clique não aproxima: é o jeito de clicar sem disparar o zoom automático.
-            // (⌃+clique abriria o menu de contexto no macOS.)
-            let fnEvent = event.modifierFlags.contains(.function)
-            let fnNow = NSEvent.modifierFlags.contains(.function)
-            let fnState = CGEventSource.flagsState(.combinedSessionState).contains(.maskSecondaryFn)
-            Self.clickLog.notice("clique recebido (fn: evento \(fnEvent), agora \(fnNow), estado \(fnState))")
-            if fnEvent || fnNow || fnState { return }
-            self?.handleClick()
+            self?.clickArrived(fn: event.modifierFlags.contains(.function))
         }) {
             clickMonitors.append(global)
-            Self.clickLog.notice("monitor de clique ligado (acessibilidade: \(AXIsProcessTrusted()))")
+            Self.clickLog.notice("clique pelo monitor global (acessibilidade: \(AXIsProcessTrusted()))")
         } else {
-            Self.clickLog.error("monitor de clique não foi criado pelo macOS")
+            Self.clickLog.error("nem event tap nem monitor de clique foram criados pelo macOS")
         }
     }
 
+    // fn+clique não aproxima: é o jeito de clicar sem disparar o zoom automático.
+    // (⌃+clique abriria o menu de contexto no macOS.)
+    private func clickArrived(fn fnEvent: Bool) {
+        let fnNow = NSEvent.modifierFlags.contains(.function)
+        let fnState = CGEventSource.flagsState(.combinedSessionState).contains(.maskSecondaryFn)
+        Self.clickLog.notice("clique recebido (fn: evento \(fnEvent), agora \(fnNow), estado \(fnState))")
+        if fnEvent || fnNow || fnState { return }
+        handleClick()
+    }
+
     private func stopClickMonitors() {
+        clickTap.stop()
         clickMonitors.forEach { NSEvent.removeMonitor($0) }
         clickMonitors.removeAll()
     }
@@ -579,5 +589,70 @@ private final class HUDPart: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         onDraw?(bounds)
+    }
+}
+
+// Escuta (sem consumir) o botão esquerdo em toda a sessão. Cliques nas janelas da própria Lupa
+// (barra de gravação, bolha) ficam de fora, como no monitor global.
+final class ClickTap {
+    private var tap: CFMachPort?
+    private var source: CFRunLoopSource?
+    private var onClick: ((Bool) -> Void)?
+    private let ownPID = Int64(ProcessInfo.processInfo.processIdentifier)
+
+    func start(onClick: @escaping (Bool) -> Void) -> Bool {
+        stop()
+        guard AXIsProcessTrusted() else { return false }
+        self.onClick = onClick
+        let mask: CGEventMask = 1 << CGEventType.leftMouseDown.rawValue
+        let callback: CGEventTapCallBack = { _, type, event, refcon in
+            guard let refcon else { return Unmanaged.passUnretained(event) }
+            let clicks = Unmanaged<ClickTap>.fromOpaque(refcon).takeUnretainedValue()
+            clicks.handle(type: type, event: event)
+            return Unmanaged.passUnretained(event)
+        }
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .tailAppendEventTap,
+            options: .listenOnly,
+            eventsOfInterest: mask,
+            callback: callback,
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        ) else {
+            self.onClick = nil
+            return false
+        }
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        self.tap = tap
+        self.source = source
+        return true
+    }
+
+    func stop() {
+        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
+        if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+        tap = nil
+        source = nil
+        onClick = nil
+    }
+
+    private func handle(type: CGEventType, event: CGEvent) {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            LiveZoomController.clickLog.notice("event tap de clique reativado")
+            return
+        }
+        guard type == .leftMouseDown else { return }
+        if event.getIntegerValueField(.eventTargetUnixProcessID) == ownPID || Self.onOwnWindow() { return }
+        let fn = event.flags.contains(.maskSecondaryFn)
+        onClick?(fn)
+    }
+
+    // A janela do zoom não recebe clique; as que recebem (barra, bolha, painéis) não dão zoom.
+    private static func onOwnWindow() -> Bool {
+        let mouse = NSEvent.mouseLocation
+        return NSApp.windows.contains { $0.isVisible && !$0.ignoresMouseEvents && $0.frame.contains(mouse) }
     }
 }

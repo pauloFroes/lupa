@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    container: swift:6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift-format
+        run: swift format lint --strict --recursive --parallel Sources Tests Package.swift scripts/make-icon.swift
+
+  scripts:
+    name: Scripts and translations
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        run: shellcheck scripts/*.sh
+      - name: Translation keys
+        run: python3 scripts/extract-strings.py --check Resources/pt-BR.lproj/Localizable.strings
+
+  build:
+    name: Build and test
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version
+      - name: Build
+        run: swift build -c release
+      - name: Test
+        run: swift test
+      - name: Assemble app bundle
+        run: scripts/build-app.sh
+        env:
+          LUPA_SIGN_IDENTITY: "-"
+      - name: Verify bundle
+        run: |
+          codesign --verify --strict build/Lupa.app
+          plutil -lint build/Lupa.app/Contents/Info.plist build/Lupa.app/Contents/Resources/*.lproj/*.strings

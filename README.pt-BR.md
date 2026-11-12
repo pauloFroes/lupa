@@ -21,26 +21,12 @@ aparece em português quando o macOS está em português, e em inglês nos demai
 ## Requisitos
 
 - macOS 15 Sequoia ou mais novo, em Mac com Apple silicon ou Intel
-- Para compilar: Xcode 16, ou as Command Line Tools correspondentes (`xcode-select --install`) para
-  um build que roda só na arquitetura do seu Mac
+- Swift 6.0 ou mais novo: Xcode 16+, ou só as Command Line Tools (`xcode-select --install`)
+- Git
 
 ## Instalação
 
-### A partir do .zip
-
-A Lupa ainda não é notarizada pela Apple, então o macOS pede que você a libere uma vez.
-
-1. Descompacte `Lupa-<versão>.zip` e arraste **Lupa.app** para **Aplicativos**.
-2. Abra a Lupa. O macOS avisa que não pode verificar o app; feche o aviso sem mover para o Lixo.
-3. Em **Ajustes do Sistema › Privacidade e Segurança**, role até o fim, clique em **Abrir Mesmo
-   Assim** ao lado da Lupa e confirme com a sua senha.
-4. Uma lupa aparece na barra de menus. Pressione `⌃1`, permita **Gravação de Tela e Áudio do
-   Sistema** quando o macOS pedir e abra a Lupa de novo.
-
-Para atualizar, substitua o app em Aplicativos pelo novo. As permissões continuam valendo enquanto
-o build novo for assinado com o mesmo certificado (veja [Permissões](#permissões)).
-
-### A partir do código
+A Lupa é compilada a partir do código. Não há binário notarizado.
 
 ```bash
 git clone https://github.com/pauloFroes/lupa.git
@@ -48,15 +34,27 @@ cd lupa
 scripts/build-app.sh --install --open
 ```
 
-O script compila em modo release, monta `build/Lupa.app` com ícone, fontes e traduções e assina o
-app. `--install` fecha a cópia aberta e substitui `/Applications/Lupa.app`; `--open` abre o app e
-confere que a cópia nova é a que está rodando; `--universal` compila para Apple silicon e Intel.
-Para atualizar, rode o mesmo comando depois de `git pull`. Para abrir junto com o Mac, ligue
-**Abrir ao iniciar sessão** no menu.
+Uma lupa aparece na barra de menus. Pressione `⌃1`, permita **Gravação de Tela e Áudio do
+Sistema** quando o macOS pedir e abra a Lupa de novo.
 
-Para gerar um .zip e mandar para outra pessoa, rode `scripts/package.sh`. Ele cria
-`build/Lupa-<versão>.zip` com um build universal e os passos de instalação acima
-(`Como instalar.txt`, em português e inglês).
+O `build-app.sh` compila em modo release, monta `build/Lupa.app` com ícone, fontes e traduções e
+assina o app com um certificado local (veja [Permissões](#permissões)). As opções:
+
+| Opção | Efeito |
+| --- | --- |
+| `--install` | Fecha a cópia aberta e substitui `/Applications/Lupa.app`. |
+| `--open` | Abre o app e confere que a cópia nova é a que está rodando. |
+| `--universal` | Compila para Apple silicon e Intel (precisa do Xcode). |
+
+Para atualizar, puxe as mudanças e rode o mesmo comando:
+
+```bash
+git pull && scripts/build-app.sh --install --open
+```
+
+Para abrir junto com o Mac, ligue **Abrir ao iniciar sessão** no menu. Para desinstalar, feche a
+Lupa e apague `/Applications/Lupa.app`; `tccutil reset All io.github.paulofroes.lupa` remove as
+permissões.
 
 ## Primeiros passos
 

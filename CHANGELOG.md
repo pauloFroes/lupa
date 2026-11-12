@@ -11,7 +11,7 @@ All notable changes to this project are documented here. The format follows
 - `scripts/package.sh` builds a universal (Apple silicon and Intel) app and zips it with
   installation notes, ready to send to someone else; `build-app.sh --universal` builds for both
   architectures.
-- README: installation steps for the zip and a getting-started tour.
+- README: a getting-started tour, a table of `build-app.sh` flags and uninstall steps.
 
 ## [0.3.0] - 2026-11-12
 

@@ -25,6 +25,8 @@ struct RecordingOptions: Codable, Equatable {
     var microphone = false
     var microphoneID: String?
     var camera = false
+    // Câmera da bolha (uniqueID); nil = automática, a câmera do Mac primeiro.
+    var cameraID: String?
     var showClicks = true
     var quality: Quality = .hevc
     var framesPerSecond = 60

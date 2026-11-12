@@ -100,6 +100,7 @@ final class RecordingController {
         let view = RecordPanelView(
             prefs: prefs,
             microphones: Microphone.available(),
+            cameras: Camera.available(),
             shortcut: shortcutLabel(),
             onRecord: { [weak self] in self?.beginFromPanel() },
             onCancel: { [weak self] in self?.closePanel(restoreFocus: true) }
@@ -213,7 +214,7 @@ final class RecordingController {
     private func countdown(screen: NSScreen, area: CGRect?) {
         if prefs.recording.camera {
             camera.onMove = { [weak self] origin in self?.prefs.recording.cameraOrigin = origin }
-            try? camera.show(on: screen, at: prefs.recording.cameraOrigin)
+            try? camera.show(on: screen, at: prefs.recording.cameraOrigin, cameraID: prefs.recording.cameraID)
         }
         let window = OverlayWindow(screen: screen)
         window.ignoresMouseEvents = true

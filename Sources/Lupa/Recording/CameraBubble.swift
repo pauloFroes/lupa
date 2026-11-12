@@ -45,9 +45,9 @@ final class CameraBubble {
     // Avisa o novo lugar escolhido (arrastando), para a próxima gravação começar nele.
     var onMove: ((CGPoint) -> Void)?
 
-    func show(on screen: NSScreen, at savedOrigin: CGPoint? = nil) throws {
+    func show(on screen: NSScreen, at savedOrigin: CGPoint? = nil, cameraID: String? = nil) throws {
         guard panel == nil else { return }
-        guard let device = Self.pickCamera() else { return }
+        guard let device = Self.pickCamera(id: cameraID) else { return }
         let input = try AVCaptureDeviceInput(device: device)
         // Configura na mesma fila do `hide()`: senão a limpeza da gravação anterior, ainda na
         // fila, tira a entrada recém-posta e a bolha fica preta.
@@ -120,14 +120,23 @@ final class CameraBubble {
         }
     }
 
-    // A câmera do Mac primeiro: o padrão do sistema pode ser uma câmera virtual ou o iPhone
-    // (Câmera de Continuidade), que entregam imagem preta quando não estão transmitindo.
-    private static func pickCamera() -> AVCaptureDevice? {
-        let devices = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera],
+    // Câmeras que dá para escolher no painel de gravação.
+    static func devices() -> [AVCaptureDevice] {
+        AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera, .deskViewCamera],
             mediaType: .video,
             position: .unspecified
-        ).devices.filter { $0.isConnected && !$0.isSuspended }
+        ).devices.filter(\.isConnected)
+    }
+
+    // A câmera escolhida no painel; sem escolha (ou se ela sumiu), a câmera do Mac primeiro: o
+    // padrão do sistema pode ser uma câmera virtual (Camo) ou o iPhone, que ficam pretos quando
+    // não estão transmitindo.
+    static func pickCamera(id: String?) -> AVCaptureDevice? {
+        if let id, let chosen = AVCaptureDevice(uniqueID: id), chosen.isConnected, !chosen.isSuspended {
+            return chosen
+        }
+        let devices = devices().filter { !$0.isSuspended }
         return devices.first { $0.deviceType == .builtInWideAngleCamera }
             ?? devices.first { $0.deviceType == .external }
             ?? devices.first

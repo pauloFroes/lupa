@@ -15,6 +15,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 CALLS = r"(?:String\(\s*localized:|Text\(|Button\(|toggleRow\(|eyebrow\(|section\(|\.help\(|\.accessibilityLabel\(|LimeToggle\(label:)"
 SINGLE = re.compile(CALLS + r'\s*"((?:[^"\\]|\\.)*)"')
 MULTI = re.compile(CALLS + r'\s*(?:localized:\s*)?"""\n(.*?)\n\s*"""', re.S)
+# toggleRow(_:_:isOn:) takes a second LocalizedStringKey, the row's detail line.
+DETAIL = re.compile(r'toggleRow\(\s*"(?:[^"\\]|\\.)*",\s*"((?:[^"\\]|\\.)*)"')
 INTERP = re.compile(r"\\\((?:[^()]|\([^()]*\))*\)")
 
 
@@ -30,7 +32,7 @@ def keys() -> set[str]:
             lines = match.group(1).split("\n")
             indent = min(len(l) - len(l.lstrip()) for l in lines if l.strip())
             found.add(normalize("\n".join(l[indent:] for l in lines)))
-        for match in SINGLE.finditer(text):
+        for match in [*SINGLE.finditer(text), *DETAIL.finditer(text)]:
             found.add(normalize(match.group(1)))
     return {k for k in found if k.strip() and re.search(r"[A-Za-z]", k)}
 

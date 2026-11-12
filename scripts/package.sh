@@ -29,6 +29,8 @@ cp Resources/Distribution/*.txt "$stage/Lupa/"
 
 zip="build/Lupa-$version.zip"
 rm -f "$zip"
-# ditto keeps the bundle's signature, extended attributes and symlinks intact; zip(1) does not.
-ditto -c -k --keepParent "$stage/Lupa" "$zip"
+# ditto keeps the bundle's symlinks and signature intact. --norsrc --noextattr leave out the
+# AppleDouble "._*" entries: unzip(1) and other tools would extract them into the bundle as extra
+# files, which breaks the signature.
+ditto -c -k --norsrc --noextattr --keepParent "$stage/Lupa" "$zip"
 echo "packaged: $zip ($(du -h "$zip" | cut -f1 | tr -d ' '))"

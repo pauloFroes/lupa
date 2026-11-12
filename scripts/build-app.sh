@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Builds build/Lupa.app from the Swift package.
 #
-# Usage: scripts/build-app.sh [--install] [--open]
-#   --install  quit any running Lupa, replace /Applications/Lupa.app and verify the copy
-#   --open     launch the built (or installed) app and verify that copy is the one running
+# Usage: scripts/build-app.sh [--universal] [--install] [--open]
+#   --universal  build for Apple silicon and Intel (needs Xcode, not just the Command Line Tools)
+#   --install    quit any running Lupa, replace /Applications/Lupa.app and verify the copy
+#   --open       launch the built (or installed) app and verify that copy is the one running
 #
 # LUPA_SIGN_IDENTITY picks the code-signing identity. By default the script creates (once) and
 # uses a self-signed "Lupa Local Signing" certificate; LUPA_SIGN_IDENTITY=- signs ad hoc.
@@ -14,12 +15,14 @@ cd "$(dirname "$0")/.."
 readonly bundle_id=io.github.paulofroes.lupa
 install=false
 open_after=false
+arch_flags=() # expanded with the + form below: bash 3.2 rejects an empty "${a[@]}" under set -u
 for arg in "$@"; do
   case "$arg" in
+    --universal) arch_flags=(--arch arm64 --arch x86_64) ;;
     --install) install=true ;;
     --open) open_after=true ;;
     -h | --help)
-      sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -34,8 +37,8 @@ fail() {
   exit 1
 }
 
-swift build -c release
-bin_dir="$(swift build -c release --show-bin-path)"
+swift build -c release ${arch_flags[@]+"${arch_flags[@]}"}
+bin_dir="$(swift build -c release ${arch_flags[@]+"${arch_flags[@]}"} --show-bin-path)"
 
 if [ ! -f build/AppIcon.icns ]; then
   mkdir -p build/AppIcon.iconset

@@ -45,8 +45,8 @@ jobs:
         run: swift build -c release
       - name: Test
         run: swift test
-      - name: Assemble app bundle
-        run: scripts/build-app.sh
+      - name: Package universal app
+        run: scripts/package.sh
         env:
           LUPA_SIGN_IDENTITY: "-"
       - name: Verify bundle

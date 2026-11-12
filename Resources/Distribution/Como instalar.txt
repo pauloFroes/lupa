@@ -1,0 +1,45 @@
+COMO INSTALAR A LUPA
+
+Precisa de macOS 15 Sequoia ou mais novo, em Mac com Apple silicon ou Intel.
+
+1. Arraste Lupa.app para a pasta Aplicativos.
+
+2. Abra a Lupa. O macOS avisa que não pode verificar o app, porque ele ainda
+   não é notarizado pela Apple. Feche o aviso (não mova para o Lixo).
+
+3. Abra Ajustes do Sistema › Privacidade e Segurança, role até o fim e clique
+   em "Abrir Mesmo Assim" ao lado da Lupa. Confirme com a sua senha.
+   Isso só é preciso na primeira vez.
+
+4. A Lupa aparece como uma lupa na barra de menus, no alto da tela.
+   Pressione Control-1. O macOS pede a permissão de Gravação de Tela:
+   ligue a Lupa em Ajustes do Sistema › Privacidade e Segurança ›
+   Gravação de Tela e Áudio do Sistema e abra a Lupa de novo.
+
+5. Microfone e câmera são pedidos só quando você liga essas opções no painel
+   de gravação. Acessibilidade é opcional: deixa o zoom no clique mais
+   confiável durante a gravação.
+
+Atalhos principais
+  Control-1  Zoom (tela congelada)        Control-4  Zoom ao vivo
+  Control-2  Desenhar                     Control-5  Gravar / parar
+  Control-3  Intervalo (cronômetro)       Esc        Sair do modo
+No desenho, H mostra todos os comandos. Para abrir junto com o Mac, ligue
+"Abrir ao iniciar sessão" no menu da Lupa.
+
+Manual completo: README do projeto.
+
+
+HOW TO INSTALL LUPA
+
+Requires macOS 15 Sequoia or later, on an Apple silicon or Intel Mac.
+
+1. Drag Lupa.app into the Applications folder.
+2. Open Lupa. macOS says it cannot verify the app, because it is not notarized
+   yet. Close the alert (do not move it to the Trash).
+3. Open System Settings › Privacy & Security, scroll to the bottom and click
+   "Open Anyway" next to Lupa. Confirm with your password. First time only.
+4. Lupa shows up as a magnifying glass in the menu bar. Press Control-1 and
+   allow Screen & System Audio Recording when asked, then open Lupa again.
+5. Microphone and camera are requested only when you turn them on in the
+   recording panel. Accessibility is optional.

@@ -20,12 +20,27 @@ aparece em português quando o macOS está em português, e em inglês nos demai
 
 ## Requisitos
 
-- macOS 15 Sequoia ou mais novo
-- Xcode 16 ou as Command Line Tools correspondentes (`xcode-select --install`) para compilar
+- macOS 15 Sequoia ou mais novo, em Mac com Apple silicon ou Intel
+- Para compilar: Xcode 16, ou as Command Line Tools correspondentes (`xcode-select --install`) para
+  um build que roda só na arquitetura do seu Mac
 
 ## Instalação
 
-Ainda não há binário notarizado, então a Lupa é compilada a partir do código:
+### A partir do .zip
+
+A Lupa ainda não é notarizada pela Apple, então o macOS pede que você a libere uma vez.
+
+1. Descompacte `Lupa-<versão>.zip` e arraste **Lupa.app** para **Aplicativos**.
+2. Abra a Lupa. O macOS avisa que não pode verificar o app; feche o aviso sem mover para o Lixo.
+3. Em **Ajustes do Sistema › Privacidade e Segurança**, role até o fim, clique em **Abrir Mesmo
+   Assim** ao lado da Lupa e confirme com a sua senha.
+4. Uma lupa aparece na barra de menus. Pressione `⌃1`, permita **Gravação de Tela e Áudio do
+   Sistema** quando o macOS pedir e abra a Lupa de novo.
+
+Para atualizar, substitua o app em Aplicativos pelo novo. As permissões continuam valendo enquanto
+o build novo for assinado com o mesmo certificado (veja [Permissões](#permissões)).
+
+### A partir do código
 
 ```bash
 git clone https://github.com/pauloFroes/lupa.git
@@ -35,8 +50,40 @@ scripts/build-app.sh --install --open
 
 O script compila em modo release, monta `build/Lupa.app` com ícone, fontes e traduções e assina o
 app. `--install` fecha a cópia aberta e substitui `/Applications/Lupa.app`; `--open` abre o app e
-confere que a cópia nova é a que está rodando. Para atualizar, rode o mesmo comando depois de
-`git pull`. Para abrir junto com o Mac, ligue **Abrir ao iniciar sessão** no menu.
+confere que a cópia nova é a que está rodando; `--universal` compila para Apple silicon e Intel.
+Para atualizar, rode o mesmo comando depois de `git pull`. Para abrir junto com o Mac, ligue
+**Abrir ao iniciar sessão** no menu.
+
+Para gerar um .zip e mandar para outra pessoa, rode `scripts/package.sh`. Ele cria
+`build/Lupa-<versão>.zip` com um build universal e os passos de instalação acima
+(`Como instalar.txt`, em português e inglês).
+
+## Primeiros passos
+
+Um tour de cinco minutos pelo que a Lupa faz. Todos os atalhos estão em [Uso](#uso).
+
+1. **Aproximar um detalhe.** Pressione `⌃1`. A tela congela e aproxima em torno do cursor; role ou
+   faça a pinça para aproximar mais e mova o mouse para navegar. `Esc` sai.
+2. **Apontar algo.** Pressione `⌃2` (ou clique durante o zoom) e arraste para desenhar. `R`, `G` ou
+   `B` trocam a cor, `5` faz setas, `T` escreve, `W` abre o quadro branco, `E` apaga tudo. `H`
+   mostra todos os comandos do desenho na tela. `Esc` sai.
+3. **Aproximar enquanto trabalha.** Pressione `⌃4` para o zoom ao vivo: o zoom segue o cursor e
+   os cliques chegam ao app embaixo. `⌃+` e `⌃-` mudam o zoom; `⌃4` ou `Esc` desligam.
+4. **Gravar uma aula.** Pressione `⌃5` para abrir o painel de gravação:
+   - escolha **Tela inteira** ou arraste uma **Área**;
+   - ligue o **Microfone** e veja o medidor de nível se mexer quando você fala;
+   - ligue a **Câmera em bolha** e escolha a câmera na prévia;
+   - em **Salvar em**, clique em **Alterar…** para escolher a pasta (o padrão é `~/Filmes/Lupa`);
+   - se quiser, ligue **Mostrar cliques** (anéis) e **Som do clique**.
+
+   Clique em **Gravar**. Depois da contagem de 3 segundos, cada clique aproxima onde você clicou, e
+   a imagem volta quando o mouse para; `fn`-clique clica sem zoom. `⌃2` desenha sobre a tela em
+   movimento e `Esc` apaga, `⌥` + arrastar move a bolha da câmera e `⌃⇧5` pausa. `⌃5` de novo
+   para; um painel oferece abrir o vídeo ou mostrá-lo no Finder.
+5. **Dar um intervalo.** Pressione `⌃3` para um cronômetro em tela cheia; `↑` `↓` mudam um minuto.
+
+Os ajustes da Lupa (`⌘,` com o menu aberto) mudam os atalhos, o zoom inicial, a cor da caneta, o
+cursor do zoom ao vivo e a duração do intervalo.
 
 ## Uso
 

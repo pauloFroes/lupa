@@ -24,7 +24,6 @@ final class Preferences: ObservableObject {
         static let recording = "recordingOptions"
         static let cursorSize = "liveCursorSizeIndex"
         static let cursorSmoothing = "liveCursorSmoothingIndex"
-        static let captions = "captionOptions"
     }
 
     private let defaults = UserDefaults.standard
@@ -59,12 +58,6 @@ final class Preferences: ObservableObject {
         }
     }
 
-    @Published var captions: CaptionOptions {
-        didSet {
-            if let data = try? JSONEncoder().encode(captions) { defaults.set(data, forKey: Keys.captions) }
-        }
-    }
-
     var initialZoom: CGFloat {
         Self.zoomLevels[zoomIndex.clamped(0, Self.zoomLevels.count - 1)]
     }
@@ -92,8 +85,6 @@ final class Preferences: ObservableObject {
         shortcuts = Self.loadShortcuts(from: defaults)
         recording = defaults.data(forKey: Keys.recording)
             .flatMap { try? JSONDecoder().decode(RecordingOptions.self, from: $0) } ?? RecordingOptions()
-        captions = defaults.data(forKey: Keys.captions)
-            .flatMap { try? JSONDecoder().decode(CaptionOptions.self, from: $0) } ?? CaptionOptions()
     }
 
     private static func loadShortcuts(from defaults: UserDefaults) -> [Action: Shortcut] {

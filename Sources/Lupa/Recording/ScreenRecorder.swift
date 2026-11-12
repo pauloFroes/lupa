@@ -32,6 +32,8 @@ struct RecordingOptions: Codable, Equatable {
     // à esquerda); voltam na próxima gravação.
     var lastArea: CGRect?
     var cameraOrigin: CGPoint?
+    // Pasta escolhida no painel de gravação (nil = Filmes › Lupa).
+    var folderPath: String?
 }
 
 enum RecordingError: LocalizedError {
@@ -88,7 +90,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         let excluded = content.windows.filter { windowIDs.contains($0.windowID) }
         let filter = SCContentFilter(display: display, excludingWindows: excluded)
         let configuration = Self.configuration(screen: screen, area: area, options: options)
-        let url = try Self.makeOutputURL()
+        let url = try Self.makeOutputURL(in: Self.folder(for: options))
         try setUpWriter(url: url, configuration: configuration, options: options)
 
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
@@ -182,13 +184,32 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     // ~/Filmes/Lupa
-    static var folder: URL {
+    static var defaultFolder: URL {
         FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Lupa", isDirectory: true)
     }
 
-    private static func makeOutputURL() throws -> URL {
-        let folder = Self.folder
+    // A pasta escolhida; se ela sumiu (disco externo desconectado, pasta apagada), volta para
+    // Filmes › Lupa em vez de perder a gravação.
+    static func folder(for options: RecordingOptions) -> URL {
+        guard let path = options.folderPath, !path.isEmpty else { return defaultFolder }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return defaultFolder
+        }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    // "Filmes › Lupa", "Mesa › Aulas": as duas últimas pastas, com os nomes do Finder.
+    static func label(for folder: URL) -> String {
+        let manager = FileManager.default
+        let parent = folder.deletingLastPathComponent()
+        let name = manager.displayName(atPath: folder.path)
+        guard parent.path != folder.path, parent.path != "/" else { return name }
+        return "\(manager.displayName(atPath: parent.path)) › \(name)"
+    }
+
+    private static func makeOutputURL(in folder: URL) throws -> URL {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'às' HH.mm.ss"

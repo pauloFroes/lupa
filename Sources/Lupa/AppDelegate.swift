@@ -7,9 +7,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let settings = SettingsWindowController()
     private let live = LiveZoomController()
     private let recording = RecordingController()
-    private let captions = CaptionController()
-    // Legenda ligada sozinha pelo Ao vivo (ou pela gravação): desliga junto com eles.
-    private var captionsStartedByLive = false
     private var pauseItem: NSMenuItem?
     private var recordingTicker: Timer?
 
@@ -63,28 +60,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             unregisterLiveHotKeys()
             recording.liveZoomActive = false
-            // Zoom, desenho e intervalo fecham o Ao vivo durante a gravação: aí a legenda continua.
-            if captionsStartedByLive, !recordingActive {
-                captionsStartedByLive = false
-                captions.stop()
-            }
-        }
-        captions.recordingClock = { [weak self] in
-            guard let self, recording.state == .recording else { return nil }
-            return recording.elapsed
-        }
-        captions.onOpenSettings = { [weak self] in self?.settings.show() }
-        captions.onChange = { [weak self] in
-            guard let self else { return }
-            actionItems[.captions]?.state = captions.isActive ? .on : .off
-        }
-        recording.onStarted = { [weak self] in
-            guard let self else { return }
-            captions.recordingStarted()
-            if let screen = recording.screen { captions.move(to: screen, area: recording.area) }
-        }
-        recording.onFinished = { [weak self] url, duration in
-            self?.captions.writeSubtitles(for: url, recordingDuration: duration)
         }
         recording.shortcutLabel = { [weak self] in self?.prefs.shortcuts[.record]?.displayString ?? "" }
         recording.pauseShortcutLabel = { [weak self] in self?.pauseShortcut?.displayString ?? "" }
@@ -94,8 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Barra de menus
 
-    // Sem Dock nem barra de menus própria, o ⌘V não chega aos campos dos Ajustes (a chave da
-    // OpenAI). Um menu Editar invisível dá os atalhos de texto.
+    // Sem Dock nem barra de menus própria, o ⌘V não chega aos campos de texto. Um menu Editar
+    // invisível dá os atalhos de texto.
     private func setupEditMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem()
@@ -173,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openRecordingsFolder() {
-        let folder = ScreenRecorder.folder
+        let folder = ScreenRecorder.folder(for: prefs.recording)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         NSWorkspace.shared.open(folder)
     }
@@ -217,11 +192,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 live.setAutoZoom(true, level: prefs.initialZoom)
                 registerLiveHotKeys()
                 recording.liveZoomActive = true
-                // O Ao vivo já estava aberto (sem legenda): a gravação também liga a legenda.
-                if prefs.captions.onLive, !captions.isActive, let screen = live.screen {
-                    captionsStartedByLive = true
-                    captions.start(on: screen, area: recording.area)
-                }
             } else {
                 liveStartedByRecording = true
                 startLive()
@@ -235,10 +205,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 registerLiveHotKeys()
             }
             liveStartedByRecording = false
-            if captionsStartedByLive, !live.isActive {
-                captionsStartedByLive = false
-                captions.stop()
-            }
         }
     }
 
@@ -384,14 +350,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         case .record:
             recording.toggle()
-        case .captions:
-            if captions.isActive {
-                captionsStartedByLive = false
-                captions.stop()
-            } else {
-                let screen = live.screen ?? (recording.isRecording ? recording.screen : nil) ?? ScreenCapture.screenUnderMouse()
-                captions.start(on: screen, area: recording.isRecording ? recording.area : nil)
-            }
         }
     }
 
@@ -504,10 +462,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 try await self.live.start(on: screen, zoom: self.prefs.initialZoom, autoZoom: auto)
                 self.registerLiveHotKeys()
                 self.recording.liveZoomActive = auto
-                if self.prefs.captions.onLive, !self.captions.isActive {
-                    self.captionsStartedByLive = true
-                    self.captions.start(on: screen, area: auto ? self.recording.area : nil)
-                }
             } catch {
                 self.showCaptureError(error)
             }

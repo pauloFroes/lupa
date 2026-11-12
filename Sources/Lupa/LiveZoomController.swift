@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CoreMedia
+import OSLog
 import ScreenCaptureKit
 
 // Zoom ao vivo: um SCStream da tela (sem as janelas da Lupa) desenhado numa janela que não
@@ -43,6 +44,8 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     static let transitionDuration = 0.7
     static let fadeDuration = 0.3
     private let queue = DispatchQueue(label: "lupa.live-zoom")
+    // Console › processo Lupa › categoria "zoom-clique": diz se o clique chegou e o que o barrou.
+    static let clickLog = Logger(subsystem: "io.github.paulofroes.lupa", category: "zoom-clique")
 
     // Gravação: o Ao vivo começa em 1×, aproxima no ponto do clique e volta a 1× quando o mouse
     // fica parado, como nos vídeos editados. Sem borda nem selo, que entrariam no vídeo.
@@ -174,11 +177,17 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
         if let global = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] event in
             // fn+clique não aproxima: é o jeito de clicar sem disparar o zoom automático.
             // (⌃+clique abriria o menu de contexto no macOS.)
-            if event.modifierFlags.contains(.function) || NSEvent.modifierFlags.contains(.function)
-                || CGEventSource.flagsState(.combinedSessionState).contains(.maskSecondaryFn) { return }
+            let fnEvent = event.modifierFlags.contains(.function)
+            let fnNow = NSEvent.modifierFlags.contains(.function)
+            let fnState = CGEventSource.flagsState(.combinedSessionState).contains(.maskSecondaryFn)
+            Self.clickLog.notice("clique recebido (fn: evento \(fnEvent), agora \(fnNow), estado \(fnState))")
+            if fnEvent || fnNow || fnState { return }
             self?.handleClick()
         }) {
             clickMonitors.append(global)
+            Self.clickLog.notice("monitor de clique ligado (acessibilidade: \(AXIsProcessTrusted()))")
+        } else {
+            Self.clickLog.error("monitor de clique não foi criado pelo macOS")
         }
     }
 
@@ -190,9 +199,15 @@ final class LiveZoomController: NSObject, SCStreamOutput, SCStreamDelegate {
     // O clique aproxima em torno do cursor: o ponto clicado fica sob ele e a câmera o centraliza.
     private func handleClick() {
         guard isActive, autoZoom, !drawing, phase == .live, let screen,
-              NSMouseInRect(NSEvent.mouseLocation, screen.frame, false) else { return }
+              NSMouseInRect(NSEvent.mouseLocation, screen.frame, false) else {
+            Self.clickLog.notice("clique ignorado (ativo \(self.isActive), auto \(self.autoZoom), desenho \(self.drawing), fase \(String(describing: self.phase), privacy: .public), na tela \(self.screen.map { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? false))")
+            return
+        }
         lastActivity = CACurrentMediaTime()
-        guard targetZoom < autoZoomLevel else { return }
+        guard targetZoom < autoZoomLevel else {
+            Self.clickLog.notice("clique já em zoom (\(Double(self.targetZoom)) de \(Double(self.autoZoomLevel)))")
+            return
+        }
         targetZoom = autoZoomLevel
         logZoom.target = log(Double(targetZoom))
         NSLog("Lupa gravação: clique, zoom %.2f", targetZoom)

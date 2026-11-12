@@ -647,7 +647,7 @@ final class ClickTap {
         guard type == .leftMouseDown else { return }
         let mouse = NSEvent.mouseLocation
         if let window = NSApp.windows.first(where: { $0.isVisible && !$0.ignoresMouseEvents && $0.frame.contains(mouse) }) {
-            LiveZoomController.clickLog.notice("clique numa janela da Lupa (\(String(describing: type(of: window)), privacy: .public), \(Int(window.frame.width))×\(Int(window.frame.height)), nível \(window.level.rawValue))")
+            LiveZoomController.clickLog.notice("clique numa janela da Lupa (\(String(describing: Swift.type(of: window)), privacy: .public), \(Int(window.frame.width))×\(Int(window.frame.height)), nível \(window.level.rawValue))")
             return
         }
         if event.getIntegerValueField(.eventTargetUnixProcessID) == ownPID {

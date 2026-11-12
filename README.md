@@ -184,9 +184,6 @@ be checked in the source.
   the unified log. It never logs keystrokes, text or screen content.
 - **Opt-in device access.** Microphone and camera are requested only when you turn them on in the
   recording panel. Open at login stays off until you enable it, and uses the system login item API.
-- **One private API.** Hiding the cursor during live zoom uses a private WindowServer call,
-  resolved at run time. It only toggles cursor visibility for Lupa's own connection; see
-  [Development](#development).
 - **Self-signed certificate.** `build-app.sh` creates a code-signing-only certificate in your
   login keychain (see [Permissions](#permissions)). It is not trusted as a root or for TLS, and
   only `codesign` may use its key. You can delete it in Keychain Access at any time.

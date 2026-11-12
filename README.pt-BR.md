@@ -184,9 +184,6 @@ ser conferido no código.
   no log unificado do sistema. Nunca registra teclas, texto ou conteúdo da tela.
 - **Dispositivos só quando você liga.** Microfone e câmera só são pedidos quando ligados no painel
   de gravação. Abrir ao iniciar a sessão vem desligado e usa a API de itens de login do sistema.
-- **Uma API privada.** Esconder o cursor no zoom ao vivo usa uma chamada privada do WindowServer,
-  resolvida em tempo de execução. Ela só muda a visibilidade do cursor na conexão da própria Lupa;
-  veja a seção [Development](README.md#development) do README em inglês.
 - **Certificado autoassinado.** O `build-app.sh` cria no chaveiro um certificado que serve só para
   assinar código (veja [Permissões](#permissões)). Ele não é confiável como raiz nem para TLS, e
   só o `codesign` pode usar a chave. Você pode apagá-lo no Acesso às Chaves quando quiser.

@@ -1,11 +1,31 @@
-# Lupa
+<p align="center">
+  <img src="docs/images/icon.svg" width="112" alt="Lupa icon">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black)
+<h1 align="center">Lupa</h1>
 
-**Zoom, annotate and record your screen while you teach or present on a Mac.**
+<p align="center">
+  <strong>Zoom, annotate and record your screen while you teach or present on a Mac.</strong>
+</p>
 
-[Leia em português](README.pt-BR.md)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/macOS-15%2B-black" alt="macOS 15+">
+  <img src="https://img.shields.io/badge/Swift-6-F05138" alt="Swift 6">
+  <img src="https://img.shields.io/badge/dependencies-none-DCFE6E" alt="No dependencies">
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#usage">Shortcuts</a> ·
+  <a href="#security-and-privacy">Privacy</a> ·
+  <a href="README.pt-BR.md">Leia em português</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/annotate.png" alt="Lupa zoomed into a code lesson, with an arrow, a box, a highlight and a note drawn on top">
+</p>
 
 Lupa ("magnifying glass" in Portuguese) lives in the menu bar and stays out of the way until you
 press a shortcut. It zooms into any part of the screen, lets you draw and type on top of it, puts a
@@ -13,12 +33,60 @@ break timer up for the room, and records all of it in high quality with your voi
 and camera. The idea comes from [ZoomIt](https://learn.microsoft.com/sysinternals/downloads/zoomit),
 rebuilt natively for macOS.
 
-- **Zoom** around the pointer, either frozen or live while you keep using your apps.
-- **Annotate** with pen, highlighter, lines, arrows, shapes, text and a white or black board.
-- **Record** at Retina resolution, up to 60 fps, in HEVC, H.264 or ProRes, with zoom-on-click.
-- **Take a break** with a full-screen countdown the audience can read from the back row.
-
 It is a native Swift app with no dependencies, no network access and no telemetry.
+
+## Features
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/zoom.png" alt="Frozen zoom around the pointer">
+      <h3>Zoom <code>⌃1</code></h3>
+      Freeze the screen and zoom around the pointer. Scroll or pinch to go further, move the mouse
+      to look around, click to start drawing right there.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/live.png" alt="Live zoom with the LIVE badge">
+      <h3>Live zoom <code>⌃4</code></h3>
+      The zoom follows the pointer while you keep working, and your clicks reach the app below.
+      Anywhere from 1× to 8×.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/shortcuts.png" alt="Drawing toolbar with the shortcut overlay">
+      <h3>Draw <code>⌃2</code></h3>
+      Pen, highlighter, lines, arrows, rectangles, ellipses and text in six colors. Press
+      <code>H</code> and every drawing shortcut shows up on screen.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/whiteboard.png" alt="Diagram sketched on the whiteboard">
+      <h3>Whiteboard <code>W</code> <code>K</code></h3>
+      Swap the screen for a white or black board and sketch an idea from scratch. Copy it or save
+      it as a PNG when you are done.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/recording.png" alt="Recording with the control bar, a live drawing and the camera bubble">
+      <h3>Record <code>⌃5</code></h3>
+      Retina resolution up to 60 fps, with zoom on click, drawings over the moving screen and a
+      camera bubble that dodges the mouse.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/break.png" alt="Full-screen break countdown">
+      <h3>Break <code>⌃3</code></h3>
+      A full-screen countdown the back row can read, with the time the class comes back.
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/images/panel.png" width="760" alt="Recording panel, control bar, done card, countdown and camera bubble">
+  <br>
+  <sub>The recording panel: source, system audio, microphone with a level meter, camera bubble with
+  a preview, click rings and sound, quality, frame rate and folder.</sub>
+</p>
 
 ## Requirements
 

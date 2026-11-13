@@ -1,8 +1,31 @@
-# Lupa
+<p align="center">
+  <img src="docs/images/icon.svg" width="112" alt="Ícone da Lupa">
+</p>
 
-**Zoom, desenho e gravação de tela para quem dá aula ou apresenta no Mac.**
+<h1 align="center">Lupa</h1>
 
-[Read in English](README.md)
+<p align="center">
+  <strong>Zoom, desenho e gravação de tela para quem dá aula ou apresenta no Mac.</strong>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licen%C3%A7a-MIT-blue.svg" alt="Licença MIT"></a>
+  <img src="https://img.shields.io/badge/macOS-15%2B-black" alt="macOS 15+">
+  <img src="https://img.shields.io/badge/Swift-6-F05138" alt="Swift 6">
+  <img src="https://img.shields.io/badge/depend%C3%AAncias-nenhuma-DCFE6E" alt="Sem dependências">
+</p>
+
+<p align="center">
+  <a href="#instalação">Instalação</a> ·
+  <a href="#primeiros-passos">Primeiros passos</a> ·
+  <a href="#uso">Atalhos</a> ·
+  <a href="#segurança-e-privacidade">Privacidade</a> ·
+  <a href="README.md">Read in English</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/annotate-pt.png" alt="Lupa com zoom numa aula de código, com seta, retângulo, marca-texto e uma anotação por cima">
+</p>
 
 A Lupa fica na barra de menus e só aparece quando você aperta um atalho. Ela aproxima qualquer
 ponto da tela, deixa você desenhar e escrever por cima, mostra um cronômetro de intervalo para a
@@ -10,13 +33,60 @@ turma e grava tudo em alta qualidade, com voz, som do sistema e câmera. A ideia
 [ZoomIt](https://learn.microsoft.com/sysinternals/downloads/zoomit), refeito de forma nativa para o
 macOS.
 
-- **Zoom** em torno do cursor, congelado ou ao vivo enquanto você usa os apps.
-- **Marcações** com caneta, marca-texto, linhas, setas, formas, texto e quadro branco ou preto.
-- **Gravação** na resolução Retina, até 60 fps, em HEVC, H.264 ou ProRes, com zoom no clique.
-- **Intervalo** com cronômetro em tela cheia, legível do fundo da sala.
-
 É um app nativo em Swift, sem dependências, sem acesso à rede e sem telemetria. A interface
 aparece em português quando o macOS está em português, e em inglês nos demais idiomas.
+
+## Recursos
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/zoom-pt.png" alt="Zoom congelado em torno do cursor">
+      <h3>Zoom <code>⌃1</code></h3>
+      Congela a tela e aproxima em torno do cursor. Role ou faça a pinça para chegar mais perto,
+      mova o mouse para navegar e clique para desenhar ali mesmo.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/live-pt.png" alt="Zoom ao vivo com o selo AO VIVO">
+      <h3>Zoom ao vivo <code>⌃4</code></h3>
+      O zoom segue o cursor enquanto você trabalha, e os cliques chegam ao app embaixo. De 1× a 8×.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/shortcuts-pt.png" alt="Barra de desenho com os comandos na tela">
+      <h3>Desenho <code>⌃2</code></h3>
+      Caneta, marca-texto, linhas, setas, retângulos, elipses e texto em seis cores. Aperte
+      <code>H</code> e todos os comandos do desenho aparecem na tela.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/whiteboard-pt.png" alt="Esquema desenhado no quadro branco">
+      <h3>Quadro <code>W</code> <code>K</code></h3>
+      Troca a tela por um quadro branco ou preto para explicar do zero. No fim, copie ou salve
+      como PNG.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/recording-pt.png" alt="Gravação com a barra de controle, um desenho ao vivo e a câmera em bolha">
+      <h3>Gravação <code>⌃5</code></h3>
+      Resolução Retina até 60 fps, com zoom no clique, desenho sobre a tela em movimento e câmera
+      em bolha que desvia do mouse.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/break-pt.png" alt="Cronômetro de intervalo em tela cheia">
+      <h3>Intervalo <code>⌃3</code></h3>
+      Cronômetro em tela cheia, legível do fundo da sala, com o horário em que a aula volta.
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/images/panel-pt.png" width="760" alt="Painel de gravação, barra de controle, aviso de conclusão, contagem e câmera em bolha">
+  <br>
+  <sub>O painel de gravação: origem, som do sistema, microfone com medidor de nível, câmera em bolha
+  com prévia, anel e som nos cliques, qualidade, quadros por segundo e pasta.</sub>
+</p>
 
 ## Requisitos
 

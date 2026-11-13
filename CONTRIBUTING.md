@@ -60,7 +60,7 @@ scripts/       build, signing, icon and localization tooling
 
 ### Checks
 
-CI runs all of these on every pull request:
+There is no hosted CI, so run all of these locally before opening a pull request:
 
 ```bash
 swift format lint --strict --recursive Sources Tests Package.swift scripts/make-icon.swift

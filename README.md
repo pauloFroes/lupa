@@ -1,6 +1,5 @@
 # Lupa
 
-[![CI](https://github.com/pauloFroes/lupa/actions/workflows/ci.yml/badge.svg)](https://github.com/pauloFroes/lupa/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black)
 
